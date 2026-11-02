@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Sascha Willems
+/* Copyright (c) 2019-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -53,6 +53,7 @@ ComputeNBody::~ComputeNBody()
 		vkDestroyDescriptorSetLayout(get_device().get_handle(), compute.descriptor_set_layout, nullptr);
 		vkDestroyPipeline(get_device().get_handle(), compute.pipeline_calculate, nullptr);
 		vkDestroyPipeline(get_device().get_handle(), compute.pipeline_integrate, nullptr);
+		vkDestroyFence(get_device().get_handle(), compute.fence, nullptr);
 		vkDestroySemaphore(get_device().get_handle(), compute.semaphore, nullptr);
 		vkDestroyCommandPool(get_device().get_handle(), compute.command_pool, nullptr);
 
@@ -61,7 +62,7 @@ ComputeNBody::~ComputeNBody()
 	}
 }
 
-void ComputeNBody::request_gpu_features(vkb::PhysicalDevice &gpu)
+void ComputeNBody::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
@@ -322,12 +323,12 @@ void ComputeNBody::prepare_storage_buffers()
 
 	// Staging
 	// SSBO won't be changed on the host after upload so copy to device local memory
-	vkb::core::Buffer staging_buffer = vkb::core::Buffer::create_staging_buffer(get_device(), particle_buffer);
+	vkb::core::BufferC staging_buffer = vkb::core::BufferC::create_staging_buffer(get_device(), particle_buffer);
 
-	compute.storage_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                             storage_buffer_size,
-	                                                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-	                                                             VMA_MEMORY_USAGE_GPU_ONLY);
+	compute.storage_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                              storage_buffer_size,
+	                                                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	                                                              VMA_MEMORY_USAGE_GPU_ONLY);
 
 	// Copy from staging buffer to storage buffer
 	VkCommandBuffer copy_command = get_device().create_command_buffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -477,8 +478,8 @@ void ComputeNBody::prepare_pipelines()
 	// Load shaders
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages;
 
-	shader_stages[0] = load_shader("compute_nbody", "particle.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("compute_nbody", "particle.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("compute_nbody", "particle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("compute_nbody", "particle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Vertex bindings and attributes
 	const std::vector<VkVertexInputBindingDescription> vertex_input_bindings = {
@@ -603,7 +604,7 @@ void ComputeNBody::prepare_compute()
 	VkComputePipelineCreateInfo compute_pipeline_create_info = vkb::initializers::compute_pipeline_create_info(compute.pipeline_layout, 0);
 
 	// 1st pass - Particle movement calculations
-	compute_pipeline_create_info.stage = load_shader("compute_nbody", "particle_calculate.comp", VK_SHADER_STAGE_COMPUTE_BIT);
+	compute_pipeline_create_info.stage = load_shader("compute_nbody", "particle_calculate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
 
 	// Set some shader parameters via specialization constants
 	struct SpecializationData
@@ -635,7 +636,7 @@ void ComputeNBody::prepare_compute()
 	VK_CHECK(vkCreateComputePipelines(get_device().get_handle(), pipeline_cache, 1, &compute_pipeline_create_info, nullptr, &compute.pipeline_calculate));
 
 	// 2nd pass - Particle integration
-	compute_pipeline_create_info.stage = load_shader("compute_nbody", "particle_integrate.comp", VK_SHADER_STAGE_COMPUTE_BIT);
+	compute_pipeline_create_info.stage = load_shader("compute_nbody", "particle_integrate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
 
 	specialization_map_entries.clear();
 	specialization_map_entries.push_back(vkb::initializers::specialization_map_entry(0, 0, sizeof(uint32_t)));
@@ -648,7 +649,7 @@ void ComputeNBody::prepare_compute()
 	// Separate command pool as queue family for compute may be different than graphics
 	VkCommandPoolCreateInfo command_pool_create_info = {};
 	command_pool_create_info.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	command_pool_create_info.queueFamilyIndex        = get_device().get_queue_family_index(VK_QUEUE_COMPUTE_BIT);
+	command_pool_create_info.queueFamilyIndex        = vkb::get_queue_family_index(get_device().get_gpu().get_queue_family_properties(), VK_QUEUE_COMPUTE_BIT);
 	VK_CHECK(vkCreateCommandPool(get_device().get_handle(), &command_pool_create_info, nullptr, &compute.command_pool));
 
 	// Create a command buffer for compute operations
@@ -663,6 +664,11 @@ void ComputeNBody::prepare_compute()
 	// Semaphore for compute & graphics sync
 	VkSemaphoreCreateInfo semaphore_create_info = vkb::initializers::semaphore_create_info();
 	VK_CHECK(vkCreateSemaphore(get_device().get_handle(), &semaphore_create_info, nullptr, &compute.semaphore));
+
+	// Fence to ensure compute dispatch has finished reading the UBO before we update it.
+	// Created signaled so the first frame's wait doesn't block forever.
+	VkFenceCreateInfo fence_create_info = vkb::initializers::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
+	VK_CHECK(vkCreateFence(get_device().get_handle(), &fence_create_info, nullptr, &compute.fence));
 
 	// Signal the semaphore
 	VkSubmitInfo submit_info         = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -764,16 +770,16 @@ void ComputeNBody::prepare_compute()
 void ComputeNBody::prepare_uniform_buffers()
 {
 	// Compute shader uniform buffer block
-	compute.uniform_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                             sizeof(compute.ubo),
-	                                                             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-	// Vertex shader uniform buffer block
-	graphics.uniform_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                              sizeof(graphics.ubo),
+	compute.uniform_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                              sizeof(compute.ubo),
 	                                                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 	                                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	// Vertex shader uniform buffer block
+	graphics.uniform_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                               sizeof(graphics.ubo),
+	                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_compute_uniform_buffers(1.0f);
 	update_graphics_uniform_buffers();
@@ -825,7 +831,7 @@ void ComputeNBody::draw()
 	compute_submit_info.pWaitDstStageMask    = &wait_stage_mask;
 	compute_submit_info.signalSemaphoreCount = 1;
 	compute_submit_info.pSignalSemaphores    = &compute.semaphore;
-	VK_CHECK(vkQueueSubmit(compute.queue, 1, &compute_submit_info, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueSubmit(compute.queue, 1, &compute_submit_info, compute.fence));
 }
 
 bool ComputeNBody::prepare(const vkb::ApplicationOptions &options)
@@ -835,8 +841,9 @@ bool ComputeNBody::prepare(const vkb::ApplicationOptions &options)
 		return false;
 	}
 
-	graphics.queue_family_index = get_device().get_queue_family_index(VK_QUEUE_GRAPHICS_BIT);
-	compute.queue_family_index  = get_device().get_queue_family_index(VK_QUEUE_COMPUTE_BIT);
+	auto const &queue_family_properties = get_device().get_gpu().get_queue_family_properties();
+	graphics.queue_family_index         = vkb::get_queue_family_index(queue_family_properties, VK_QUEUE_GRAPHICS_BIT);
+	compute.queue_family_index          = vkb::get_queue_family_index(queue_family_properties, VK_QUEUE_COMPUTE_BIT);
 
 	// Not all implementations support a work group size of 256, so we need to check with the device limits
 	work_group_size = std::min(static_cast<uint32_t>(256), get_device().get_gpu().get_properties().limits.maxComputeWorkGroupSize[0]);
@@ -858,12 +865,17 @@ void ComputeNBody::render(float delta_time)
 	{
 		return;
 	}
-	draw();
+
+	// Wait for the previous compute dispatch to finish before updating the UBO
+	VK_CHECK(vkWaitForFences(get_device().get_handle(), 1, &compute.fence, VK_TRUE, UINT64_MAX));
+	VK_CHECK(vkResetFences(get_device().get_handle(), 1, &compute.fence));
+
 	update_compute_uniform_buffers(delta_time);
 	if (camera.updated)
 	{
 		update_graphics_uniform_buffers();
 	}
+	draw();
 }
 
 bool ComputeNBody::resize(const uint32_t width, const uint32_t height)

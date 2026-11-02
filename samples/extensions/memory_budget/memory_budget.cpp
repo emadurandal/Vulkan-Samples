@@ -1,5 +1,5 @@
-/* Copyright (c) 2019-2024, Sascha Willems
- * Copyright (c) 2023-2024, Holochip Corporation
+/* Copyright (c) 2019-2026, Sascha Willems
+ * Copyright (c) 2023-2026, Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,10 +28,6 @@ MemoryBudget::MemoryBudget()
 {
 	title = "Memory Budget";
 
-	// Enable instance and device extensions required to use VK_EXT_memory_budget
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
-
 	// Initialize physical device memory properties variables
 	MemoryBudget::initialize_device_memory_properties();
 }
@@ -50,7 +46,14 @@ MemoryBudget::~MemoryBudget()
 	}
 }
 
-void MemoryBudget::request_gpu_features(vkb::PhysicalDevice &gpu)
+void MemoryBudget::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_MEMORY_BUDGET_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void MemoryBudget::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	auto &requested_features = gpu.get_mutable_requested_features();
 
@@ -147,7 +150,7 @@ void MemoryBudget::initialize_device_memory_properties()
 	physical_device_memory_budget_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
 	physical_device_memory_budget_properties.pNext = nullptr;
 	// Initialize physical device memory properties structure variables
-	device_memory_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+	device_memory_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2_KHR;
 	device_memory_properties.pNext = &physical_device_memory_budget_properties;
 }
 
@@ -197,7 +200,7 @@ std::string MemoryBudget::read_memoryHeap_flags(VkMemoryHeapFlags inputVkMemoryH
 
 void MemoryBudget::update_device_memory_properties()
 {
-	vkGetPhysicalDeviceMemoryProperties2(get_device().get_gpu().get_handle(), &device_memory_properties);
+	vkGetPhysicalDeviceMemoryProperties2KHR(get_device().get_gpu().get_handle(), &device_memory_properties);
 	device_memory_heap_count = device_memory_properties.memoryProperties.memoryHeapCount;
 
 	device_memory_total_usage  = 0;
@@ -403,16 +406,16 @@ void MemoryBudget::prepare_pipelines()
 	pipeline_create_info.pVertexInputState = &input_state;
 
 	// Instancing pipeline
-	shader_stages[0] = load_shader("instancing", "instancing.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("instancing", "instancing.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("instancing", "instancing.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("instancing", "instancing.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	// Use all input bindings and attribute descriptions
 	input_state.vertexBindingDescriptionCount   = static_cast<uint32_t>(binding_descriptions.size());
 	input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(attribute_descriptions.size());
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.instanced_rocks));
 
 	// Planet rendering pipeline
-	shader_stages[0] = load_shader("instancing", "planet.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("instancing", "planet.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("instancing", "planet.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("instancing", "planet.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	// Only use the non-instanced input bindings and attribute descriptions
 	input_state.vertexBindingDescriptionCount   = 1;
 	input_state.vertexAttributeDescriptionCount = 3;
@@ -422,8 +425,8 @@ void MemoryBudget::prepare_pipelines()
 	rasterization_state.cullMode         = VK_CULL_MODE_NONE;
 	depth_stencil_state.depthWriteEnable = VK_FALSE;
 	depth_stencil_state.depthTestEnable  = VK_FALSE;
-	shader_stages[0]                     = load_shader("instancing", "starfield.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                     = load_shader("instancing", "starfield.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                     = load_shader("instancing", "starfield.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                     = load_shader("instancing", "starfield.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	// Vertices are generated in the vertex shader
 	input_state.vertexBindingDescriptionCount   = 0;
 	input_state.vertexAttributeDescriptionCount = 0;
@@ -473,9 +476,9 @@ void MemoryBudget::prepare_instance_data()
 	// On devices with separate memory types for host visible and device local memory this will result in better performance
 	// On devices with unified memory types (DEVICE_LOCAL_BIT and HOST_VISIBLE_BIT supported at once) this isn't necessary, and you could skip the staging
 
-	vkb::core::Buffer staging_buffer = vkb::core::Buffer::create_staging_buffer(get_device(), instance_data);
+	vkb::core::BufferC staging_buffer = vkb::core::BufferC::create_staging_buffer(get_device(), instance_data);
 
-	instance_buffer.buffer = std::make_unique<vkb::core::Buffer>(get_device(), instance_buffer.size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+	instance_buffer.buffer = std::make_unique<vkb::core::BufferC>(get_device(), instance_buffer.size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
 	// Copy to staging buffer
 	VkCommandBuffer copy_command = get_device().create_command_buffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -498,10 +501,10 @@ void MemoryBudget::prepare_instance_data()
 
 void MemoryBudget::prepare_uniform_buffers()
 {
-	uniform_buffers.scene = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                            sizeof(ubo_vs),
-	                                                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                            VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.scene = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                             sizeof(ubo_vs),
+	                                                             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffer(0.0f);
 }

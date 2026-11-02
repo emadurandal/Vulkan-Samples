@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,13 +16,6 @@
  */
 
 #include "dynamic_line_rasterization.h"
-
-DynamicLineRasterization::DynamicLineRasterization()
-{
-	add_device_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
-	add_device_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
-	add_device_extension(VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME);
-}
 
 DynamicLineRasterization::~DynamicLineRasterization()
 {
@@ -114,26 +107,26 @@ void DynamicLineRasterization::prepare_scene()
 
 	cube_index_count                 = static_cast<uint32_t>(cube_indices.size());
 	edges_index_count                = static_cast<uint32_t>(edges_indices.size());
-	uint32_t vertex_buffer_size      = vertices.size() * sizeof(glm::vec3);
-	uint32_t cube_index_buffer_size  = cube_indices.size() * sizeof(uint32_t);
-	uint32_t edges_index_buffer_size = edges_indices.size() * sizeof(uint32_t);
+	uint32_t vertex_buffer_size      = static_cast<uint32_t>(vertices.size() * sizeof(glm::vec3));
+	uint32_t cube_index_buffer_size  = static_cast<uint32_t>(cube_indices.size() * sizeof(uint32_t));
+	uint32_t edges_index_buffer_size = static_cast<uint32_t>(edges_indices.size() * sizeof(uint32_t));
 
-	vertex_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                    vertex_buffer_size,
-	                                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-	                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+	vertex_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                     vertex_buffer_size,
+	                                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+	                                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
 	vertex_buffer->update(vertices.data(), vertex_buffer_size);
 
-	cube_index_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                        cube_index_buffer_size,
-	                                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-	                                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
-	cube_index_buffer->update(cube_indices.data(), cube_index_buffer_size);
-
-	edges_index_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                         edges_index_buffer_size,
+	cube_index_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                         cube_index_buffer_size,
 	                                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 	                                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
+	cube_index_buffer->update(cube_indices.data(), cube_index_buffer_size);
+
+	edges_index_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                          edges_index_buffer_size,
+	                                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+	                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
 	edges_index_buffer->update(edges_indices.data(), edges_index_buffer_size);
 
 	fill_color = glm::vec4(0.957f, 0.384f, 0.024f, 0.1f);
@@ -234,8 +227,8 @@ void DynamicLineRasterization::create_pipelines()
 	vertex_input_state.pVertexAttributeDescriptions         = vertex_input_attributes.data();
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
-	shader_stages[0] = load_shader("dynamic_line_rasterization", "base.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("dynamic_line_rasterization", "base.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("dynamic_line_rasterization", "base.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("dynamic_line_rasterization", "base.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	VkGraphicsPipelineCreateInfo graphics_create{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
 	graphics_create.pNext               = VK_NULL_HANDLE;
@@ -260,8 +253,8 @@ void DynamicLineRasterization::create_pipelines()
 	                                   VK_NULL_HANDLE,
 	                                   &pipelines.object));
 
-	shader_stages[0]                  = load_shader("dynamic_line_rasterization", "grid.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                  = load_shader("dynamic_line_rasterization", "grid.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                  = load_shader("dynamic_line_rasterization", "grid.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                  = load_shader("dynamic_line_rasterization", "grid.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	graphics_create.pStages           = shader_stages.data();
 	vertex_input_state                = vkb::initializers::pipeline_vertex_input_state_create_info();
 	graphics_create.pVertexInputState = &vertex_input_state;
@@ -271,7 +264,7 @@ void DynamicLineRasterization::create_pipelines()
 
 void DynamicLineRasterization::prepare_uniform_buffers()
 {
-	camera_ubo = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(CameraUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	camera_ubo = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(CameraUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 void DynamicLineRasterization::update_uniform_buffers()
@@ -427,30 +420,30 @@ void DynamicLineRasterization::build_command_buffers()
 	}
 }
 
-void DynamicLineRasterization::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DynamicLineRasterization::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
 {
-	{
-		auto &features = gpu.request_extension_features<VkPhysicalDeviceLineRasterizationFeaturesEXT>(
-		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT);
-		features.smoothLines              = VK_TRUE;
-		features.stippledSmoothLines      = VK_TRUE;
-		features.bresenhamLines           = VK_TRUE;
-		features.stippledBresenhamLines   = VK_TRUE;
-		features.rectangularLines         = VK_TRUE;
-		features.stippledRectangularLines = VK_TRUE;
-	}
-	{
-		auto &features =
-		    gpu.request_extension_features<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT);
-		features.extendedDynamicState = VK_TRUE;
-	}
-	{
-		auto &features =
-		    gpu.request_extension_features<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT);
-		features.extendedDynamicState3PolygonMode           = VK_TRUE;
-		features.extendedDynamicState3LineRasterizationMode = VK_TRUE;
-		features.extendedDynamicState3LineStippleEnable     = VK_TRUE;
-	}
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME]   = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME]       = vkb::RequestMode::Required;
+}
+
+void DynamicLineRasterization::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, smoothLines);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, stippledSmoothLines);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, bresenhamLines);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, stippledBresenhamLines);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, rectangularLines);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceLineRasterizationFeaturesEXT, stippledRectangularLines);
+
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicStateFeaturesEXT, extendedDynamicState);
+
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState3FeaturesEXT, extendedDynamicState3PolygonMode);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState3FeaturesEXT, extendedDynamicState3LineRasterizationMode);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState3FeaturesEXT, extendedDynamicState3LineStippleEnable);
+
 	{
 		auto &features            = gpu.get_mutable_requested_features();
 		features.fillModeNonSolid = VK_TRUE;
@@ -522,7 +515,7 @@ bool DynamicLineRasterization::resize(const uint32_t width, const uint32_t heigh
 	return true;
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_dynamic_line_rasterization()
+std::unique_ptr<vkb::VulkanSampleC> create_dynamic_line_rasterization()
 {
 	return std::make_unique<DynamicLineRasterization>();
 }

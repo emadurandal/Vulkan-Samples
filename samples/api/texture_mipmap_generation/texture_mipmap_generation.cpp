@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Sascha Willems
+/* Copyright (c) 2019-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -45,7 +45,7 @@ TextureMipMapGeneration::~TextureMipMapGeneration()
 }
 
 // Enable physical device features required for this example
-void TextureMipMapGeneration::request_gpu_features(vkb::PhysicalDevice &gpu)
+void TextureMipMapGeneration::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
@@ -109,7 +109,8 @@ void TextureMipMapGeneration::load_texture_generate_mipmaps(std::string file_nam
 	vkGetBufferMemoryRequirements(get_device().get_handle(), staging_buffer, &memory_requirements);
 	memory_allocate_info.allocationSize = memory_requirements.size;
 	// Get memory type index for a host visible buffer
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	memory_allocate_info.memoryTypeIndex =
+	    get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &staging_memory));
 	VK_CHECK(vkBindBufferMemory(get_device().get_handle(), staging_buffer, staging_memory, 0));
 
@@ -138,7 +139,7 @@ void TextureMipMapGeneration::load_texture_generate_mipmaps(std::string file_nam
 
 	vkGetImageMemoryRequirements(get_device().get_handle(), texture.image, &memory_requirements);
 	memory_allocate_info.allocationSize  = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &texture.device_memory));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), texture.image, texture.device_memory, 0));
 
@@ -284,9 +285,12 @@ void TextureMipMapGeneration::load_texture_generate_mipmaps(std::string file_nam
 // Free all Vulkan resources used by a texture object
 void TextureMipMapGeneration::destroy_texture(Texture texture)
 {
-	vkDestroyImageView(get_device().get_handle(), texture.view, nullptr);
-	vkDestroyImage(get_device().get_handle(), texture.image, nullptr);
-	vkFreeMemory(get_device().get_handle(), texture.device_memory, nullptr);
+	if (has_device())
+	{
+		vkDestroyImageView(get_device().get_handle(), texture.view, nullptr);
+		vkDestroyImage(get_device().get_handle(), texture.image, nullptr);
+		vkFreeMemory(get_device().get_handle(), texture.device_memory, nullptr);
+	}
 }
 
 void TextureMipMapGeneration::load_assets()
@@ -511,8 +515,8 @@ void TextureMipMapGeneration::prepare_pipelines()
 	// Load shaders
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages;
 
-	shader_stages[0] = load_shader("texture_mipmap_generation", "texture.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("texture_mipmap_generation", "texture.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("texture_mipmap_generation", "texture.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("texture_mipmap_generation", "texture.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Vertex bindings and attributes
 	const std::vector<VkVertexInputBindingDescription> vertex_input_bindings = {
@@ -546,10 +550,10 @@ void TextureMipMapGeneration::prepare_pipelines()
 void TextureMipMapGeneration::prepare_uniform_buffers()
 {
 	// Shared parameter uniform buffer block
-	uniform_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                     sizeof(ubo),
-	                                                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                      sizeof(ubo),
+	                                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }

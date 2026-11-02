@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2021-2024, Holochip Corporation
+ * Copyright (c) 2021-2026, Holochip Corporation
+ * Copyright (c) 2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -32,7 +33,14 @@ class DynamicRendering : public ApiVulkanSample
 	void build_command_buffers() override;
 	void view_changed() override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
+	void setup_render_pass() override;
+	void setup_framebuffer() override;
+
+  private:
+	// from vkb::VulkanSample
+	uint32_t get_api_version() const override;
 
   private:
 	void load_assets();
@@ -42,7 +50,6 @@ class DynamicRendering : public ApiVulkanSample
 	void create_descriptor_sets();
 	void create_descriptor_pool();
 	void create_pipeline();
-	void create_render_pass_non_dynamic();
 	void draw();
 
 	struct
@@ -59,9 +66,9 @@ class DynamicRendering : public ApiVulkanSample
 		float     modelscale = 0.05f;
 	} ubo_vs;
 
-	std::unique_ptr<vkb::sg::SubMesh>  skybox;
-	std::unique_ptr<vkb::sg::SubMesh>  object;
-	std::unique_ptr<vkb::core::Buffer> ubo;
+	std::unique_ptr<vkb::sg::SubMesh>   skybox;
+	std::unique_ptr<vkb::sg::SubMesh>   object;
+	std::unique_ptr<vkb::core::BufferC> ubo;
 
 	VkPipeline            model_pipeline{VK_NULL_HANDLE};
 	VkPipeline            skybox_pipeline{VK_NULL_HANDLE};
@@ -77,4 +84,4 @@ class DynamicRendering : public ApiVulkanSample
 	bool enable_dynamic;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_dynamic_rendering();
+std::unique_ptr<vkb::VulkanSampleC> create_dynamic_rendering();

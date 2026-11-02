@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021, Arm Limited and Contributors
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -52,6 +52,13 @@ class SubMesh : public Component
 
 	virtual std::type_index get_type() override;
 
+  public:
+	vkb::core::BufferC const &get_index_buffer() const;
+	uint32_t                  get_index_offset() const;
+	VkIndexType               get_index_type() const;
+	uint32_t                  get_vertex_indices() const;
+	uint32_t                  get_vertices_count() const;
+
 	VkIndexType index_type{};
 
 	std::uint32_t index_offset = 0;
@@ -60,9 +67,9 @@ class SubMesh : public Component
 
 	std::uint32_t vertex_indices = 0;
 
-	std::unordered_map<std::string, core::Buffer> vertex_buffers;
+	std::unordered_map<std::string, vkb::core::BufferC> vertex_buffers;
 
-	std::unique_ptr<core::Buffer> index_buffer;
+	std::unique_ptr<vkb::core::BufferC> index_buffer;
 
 	void set_attribute(const std::string &name, const VertexAttribute &attribute);
 
@@ -72,18 +79,16 @@ class SubMesh : public Component
 
 	const Material *get_material() const;
 
-	const ShaderVariant &get_shader_variant() const;
+	const vkb::core::ShaderVariant &get_shader_variant() const;
 
-	ShaderVariant &get_mut_shader_variant();
+	vkb::core::ShaderVariant &get_mut_shader_variant();
 
   private:
 	std::unordered_map<std::string, VertexAttribute> vertex_attributes;
 
 	const Material *material{nullptr};
 
-	ShaderVariant shader_variant;
-
-	void compute_shader_variant();
+	vkb::core::ShaderVariant shader_variant;
 };
 }        // namespace sg
 }        // namespace vkb

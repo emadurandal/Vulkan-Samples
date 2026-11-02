@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -73,8 +73,8 @@ class LogicOpDynamicState : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> common;
-		std::unique_ptr<vkb::core::Buffer> baseline;
+		std::unique_ptr<vkb::core::BufferC> common;
+		std::unique_ptr<vkb::core::BufferC> baseline;
 	} uniform_buffers;
 
 	struct
@@ -92,10 +92,10 @@ class LogicOpDynamicState : public ApiVulkanSample
 
 	struct Cube
 	{
-		std::unique_ptr<vkb::core::Buffer> vertices_pos;
-		std::unique_ptr<vkb::core::Buffer> vertices_norm;
-		std::unique_ptr<vkb::core::Buffer> indices;
-		uint32_t                           index_count{};
+		std::unique_ptr<vkb::core::BufferC> vertices_pos;
+		std::unique_ptr<vkb::core::BufferC> vertices_norm;
+		std::unique_ptr<vkb::core::BufferC> indices;
+		uint32_t                            index_count{};
 	} cube;
 
 	struct GUI_settings
@@ -122,7 +122,8 @@ class LogicOpDynamicState : public ApiVulkanSample
 	bool prepare(const vkb::ApplicationOptions &options) override;
 	void render(float delta_time) override;
 	void build_command_buffers() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 
 	void prepare_uniform_buffers();
@@ -140,4 +141,4 @@ class LogicOpDynamicState : public ApiVulkanSample
 	void create_render_context() override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_logic_op_dynamic_state();
+std::unique_ptr<vkb::VulkanSampleC> create_logic_op_dynamic_state();

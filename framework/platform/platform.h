@@ -1,4 +1,5 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2025, Arm Limited and Contributors
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,9 +29,7 @@
 #include "common/optional.h"
 #include "common/utils.h"
 #include "common/vk_common.h"
-#include "filesystem/legacy.h"
 #include "platform/application.h"
-#include "platform/parser.h"
 #include "platform/plugins/plugin.h"
 #include "platform/window.h"
 #include "rendering/render_context.h"
@@ -65,11 +64,17 @@ class Platform
 	virtual ExitCode initialize(const std::vector<Plugin *> &plugins);
 
 	/**
-	 * @brief Handles the main loop of the platform
-	 * This should be overriden if a platform requires a specific main loop setup.
+	 * @brief Handles the main update and render loop
 	 * @return An exit code representing the outcome of the loop
 	 */
 	ExitCode main_loop();
+
+	/**
+	 * @brief Handles the update and render of a frame.
+	 * Called either from main_loop(), or from a platform-specific
+	 * frame-looping mechanism, typically tied to platform screen refeshes.
+	 * @return An exit code representing the outcome of the loop
+	 */
 	ExitCode main_loop_frame();
 
 	/**
@@ -88,18 +93,6 @@ class Platform
 	 */
 	virtual void close();
 
-	/**
-	 * @brief Returns the working directory of the application set by the platform
-	 * @returns The path to the working directory
-	 */
-	static const std::string &get_external_storage_directory();
-
-	/**
-	 * @brief Returns the suitable directory for temporary files from the environment variables set in the system
-	 * @returns The path to the temp folder on the system
-	 */
-	static const std::string &get_temp_directory();
-
 	std::string &get_last_error();
 
 	virtual void resize(uint32_t width, uint32_t height);
@@ -111,8 +104,6 @@ class Platform
 	Application &get_app() const;
 
 	Application &get_app();
-
-	static void set_external_storage_directory(const std::string &dir);
 
 	void set_last_error(const std::string &error);
 
@@ -139,14 +130,12 @@ class Platform
 
 	void set_window_properties(const Window::OptionalProperties &properties);
 
-	void on_post_draw(RenderContext &context);
+	void on_post_draw(vkb::rendering::RenderContextC &context);
 
 	static const uint32_t MIN_WINDOW_WIDTH;
 	static const uint32_t MIN_WINDOW_HEIGHT;
 
   protected:
-	std::unique_ptr<CommandParser> parser;
-
 	std::vector<Plugin *> active_plugins;
 
 	std::unordered_map<Hook, std::vector<Plugin *>> hooks;
@@ -164,6 +153,8 @@ class Platform
 	 */
 	virtual void create_window(const Window::Properties &properties) = 0;
 
+	void register_hooks(Plugin *plugin);
+
 	void on_update(float delta_time);
 	void on_app_error(const std::string &app_id);
 	void on_app_start(const std::string &app_id);
@@ -179,22 +170,20 @@ class Platform
 	bool               focused{true};                  /* App is currently in focus at an operating system level */
 	bool               close_requested{false};         /* Close requested */
 
+  protected:
+	std::vector<Plugin *> plugins;
+
   private:
 	Timer timer;
 
 	const apps::AppInfo *requested_app{nullptr};
 
-	std::vector<Plugin *> plugins;
-
 	std::vector<std::string> arguments;
 
 	std::string last_error;
 
-	// static so can be references from vkb::fs
-	static std::string external_storage_directory;
-
-	// static so can be references from vkb::fs
-	static std::string temp_directory;
+	std::map<std::string, Plugin *> command_map;
+	std::map<std::string, Plugin *> option_map;
 };
 
 template <class T>

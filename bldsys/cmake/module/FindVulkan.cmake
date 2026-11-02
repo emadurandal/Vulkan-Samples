@@ -1,4 +1,5 @@
-# Updates for iOS Copyright (c) 2024, Holochip Inc.
+# Updates for iOS Copyright (c) 2024-2026, Holochip Inc.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
 # file Copyright.txt or https://cmake.org/licensing for details.
 
@@ -233,6 +234,17 @@ if("FATAL_ERROR" IN_LIST Vulkan_FIND_COMPONENTS)
     list(REMOVE_ITEM Vulkan_FIND_COMPONENTS "FATAL_ERROR")
 endif()
 
+# FindVulkan only works correctly with the default CMAKE_FIND_FRAMEWORK
+# value: FIRST. If LAST it will find the macOS dylibs instead of the iOS
+# frameworks when IOS is true. If ALWAYS it will fail to find the macOS
+# dylibs. If NEVER it will fail to find the iOS frameworks. If frameworks
+# are ever included in the SDK for macOS, the search mechanism will need
+# revisiting.
+if(DEFINED CMAKE_FIND_FRAMEWORK)
+    set(_Vulkan_saved_cmake_find_framework ${CMAKE_FIND_FRAMEWORK})
+    set(CMAKE_FIND_FRAMEWORK FIRST)
+endif()
+
 if(IOS)
     get_filename_component(Vulkan_Target_SDK "$ENV{VULKAN_SDK}/.." REALPATH)
     list(APPEND CMAKE_FRAMEWORK_PATH "${Vulkan_Target_SDK}/iOS/lib")
@@ -252,42 +264,59 @@ endif()
 
 if(WIN32)
     set(_Vulkan_library_name vulkan-1)
-    set(_Vulkan_hint_include_search_paths
-            "$ENV{VULKAN_SDK}/include"
-    )
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(_Vulkan_hint_executable_search_paths
-                "$ENV{VULKAN_SDK}/bin"
-        )
-        set(_Vulkan_hint_library_search_paths
-                "$ENV{VULKAN_SDK}/lib"
-                "$ENV{VULKAN_SDK}/bin"
-        )
-    else()
-        set(_Vulkan_hint_executable_search_paths
-                "$ENV{VULKAN_SDK}/bin32"
-                "$ENV{VULKAN_SDK}/bin"
-        )
-        set(_Vulkan_hint_library_search_paths
-                "$ENV{VULKAN_SDK}/lib32"
-                "$ENV{VULKAN_SDK}/bin32"
-                "$ENV{VULKAN_SDK}/lib"
-                "$ENV{VULKAN_SDK}/bin"
-        )
-    endif()
 else()
     set(_Vulkan_library_name vulkan)
+endif()
+set(_Vulkan_hint_include_search_paths "")
+set(_Vulkan_hint_executable_search_paths "")
+set(_Vulkan_hint_library_search_paths "")
+
+if(DEFINED ENV{VULKAN_SDK} AND IS_DIRECTORY "$ENV{VULKAN_SDK}")
     set(_Vulkan_hint_include_search_paths
-            "$ENV{VULKAN_SDK}/include"
+        "$ENV{VULKAN_SDK}/include"
     )
     set(_Vulkan_hint_executable_search_paths
-            "$ENV{VULKAN_SDK}/bin"
+        "$ENV{VULKAN_SDK}/bin"
     )
+    if(WIN32)
+        # Detect the target architecture from one of:
+        # - the C++ compiler,
+        # - the C compiler,
+        # - the VS generator,
+        # - the command-line environment,
+        # - fallback to CMAKE_SYSTEM_PROCESSOR.
+        if(CMAKE_CXX_COMPILER_LOADED AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+            set(_Vulkan_arch_name "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
+        elseif(CMAKE_C_COMPILER_LOADED AND CMAKE_C_COMPILER_ARCHITECTURE_ID)
+            set(_Vulkan_arch_name "${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
+        elseif(CMAKE_VS_PLATFORM_NAME)
+            set(_Vulkan_arch_name "${CMAKE_VS_PLATFORM_NAME}")
+        elseif(DEFINED ENV{VSCMD_ARG_TGT_ARCH})
+            set(_Vulkan_arch_name "$ENV{VSCMD_ARG_TGT_ARCH}")
+        elseif(CMAKE_SYSTEM_PROCESSOR)
+            set(_Vulkan_arch_name "${CMAKE_SYSTEM_PROCESSOR}")
+        endif()
+        # The Vulkan SDK may provide arch-specific directories for cross-compiling.
+        if(_Vulkan_arch_name MATCHES "^(ARM64|arm64|aarch64)" AND IS_DIRECTORY "$ENV{VULKAN_SDK}/lib-arm64")
+            # On X64 hosts the Vulkan SDK provides `-arm64` dirs for cross-compiling to ARM64.
+            set(_Vulkan_arch_suffix "-arm64")
+        elseif(_Vulkan_arch_name MATCHES "^(X64|x64|x86_64)" AND IS_DIRECTORY "$ENV{VULKAN_SDK}/lib-x64")
+            # On ARM64 hosts the Vulkan SDK provides `-x64` dirs for cross-compiling to x64.
+            set(_Vulkan_arch_suffix "-x64")
+        else()
+            # Otherwise assume we are compiling for the host.
+            set(_Vulkan_arch_suffix "")
+        endif()
+        unset(_Vulkan_arch_name)
+    else()
+        set(_Vulkan_arch_suffix "")
+    endif()
     set(_Vulkan_hint_library_search_paths
-            "$ENV{VULKAN_SDK}/lib"
+        "$ENV{VULKAN_SDK}/lib${_Vulkan_arch_suffix}"
     )
+    unset(_Vulkan_arch_suffix)
 endif()
-if(APPLE AND DEFINED ENV{VULKAN_SDK})
+if(APPLE AND DEFINED Vulkan_Target_SDK)
     list(APPEND _Vulkan_hint_include_search_paths
             "${Vulkan_Target_SDK}/macOS/include"
     )
@@ -301,7 +330,7 @@ if(APPLE AND DEFINED ENV{VULKAN_SDK})
         )
     else()
         list(APPEND _Vulkan_hint_library_search_paths
-                "${Vulkan_Target_SDK}}/lib"
+                "${Vulkan_Target_SDK}/lib"
         )
     endif()
 endif()
@@ -318,7 +347,7 @@ find_library(Vulkan_LIBRARY
         HINTS
         ${_Vulkan_hint_library_search_paths}
 )
-message(STATUS vulkan_library ${Vulkan_LIBRARY} search paths ${_Vulkan_hint_library_search_paths})
+#message(STATUS "vulkan_library ${Vulkan_LIBRARY} search paths ${_Vulkan_hint_library_search_paths}")
 mark_as_advanced(Vulkan_LIBRARY)
 
 find_library(Vulkan_Layer_API_DUMP
@@ -522,6 +551,11 @@ if (dxc IN_LIST Vulkan_FIND_COMPONENTS)
     mark_as_advanced(Vulkan_dxc_EXECUTABLE)
 endif()
 
+if(DEFINED _Vulkan_saved_cmake_find_framework)
+    set(CMAKE_FIND_FRAMEWORK ${_Vulkan_saved_cmake_find_framework})
+    unset(_Vulkan_saved_cmake_find_framework)
+endif()
+
 if(Vulkan_GLSLC_EXECUTABLE)
     set(Vulkan_glslc_FOUND TRUE)
 else()
@@ -652,9 +686,18 @@ find_package_handle_standard_args(Vulkan
 
 if(Vulkan_FOUND AND NOT TARGET Vulkan::Vulkan)
     add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
+    get_filename_component(_Vulkan_lib_extension ${Vulkan_LIBRARIES} LAST_EXT)
+    if(_Vulkan_lib_extension STREQUAL ".framework" AND CMAKE_VERSION VERSION_LESS 3.28)
+        set_target_properties(Vulkan::Vulkan PROPERTIES
+                # Prior to 3.28 must reference library just inside the framework.
+                IMPORTED_LOCATION "${Vulkan_LIBRARIES}/vulkan")
+    else()
+        set_target_properties(Vulkan::Vulkan PROPERTIES
+                IMPORTED_LOCATION "${Vulkan_LIBRARIES}")
+    endif()
     set_target_properties(Vulkan::Vulkan PROPERTIES
-            IMPORTED_LOCATION "${Vulkan_LIBRARIES}"
             INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
+    unset(_Vulkan_lib_extension)
 endif()
 
 if(Vulkan_FOUND AND NOT TARGET Vulkan::Headers)

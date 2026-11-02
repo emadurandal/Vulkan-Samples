@@ -1,5 +1,5 @@
-/* Copyright (c) 2020-2024, Bradley Austin Davis
- * Copyright (c) 2020-2024, Arm Limited
+/* Copyright (c) 2020-2026, Bradley Austin Davis
+ * Copyright (c) 2020-2026, Arm Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -56,6 +56,10 @@ class OpenGLInterop : public ApiVulkanSample
 	void view_changed() override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 
+  protected:
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+
   private:
 	void prepare_shared_resources();
 	void generate_quad();
@@ -94,11 +98,11 @@ class OpenGLInterop : public ApiVulkanSample
 		VkSemaphore gl_complete{VK_NULL_HANDLE};
 	} sharedSemaphores;
 
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;
-	std::unique_ptr<vkb::core::Buffer> index_buffer;
-	uint32_t                           index_count;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC> index_buffer;
+	uint32_t                            index_count;
 
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_vs;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_vs;
 
 	struct UniformBufferData
 	{
@@ -113,4 +117,4 @@ class OpenGLInterop : public ApiVulkanSample
 	VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_open_gl_interop();
+std::unique_ptr<vkb::VulkanSampleC> create_open_gl_interop();

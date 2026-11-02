@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Sascha Willems
+/* Copyright (c) 2019-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,7 +22,6 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
-#include "glsl_compiler.h"
 
 // Holds data for a scratch buffer used as a temporary storage during acceleration structure builds
 struct ScratchBuffer
@@ -35,9 +34,9 @@ struct ScratchBuffer
 // Wraps all data required for an acceleration structure
 struct AccelerationStructure
 {
-	VkAccelerationStructureKHR         handle;
-	uint64_t                           device_address;
-	std::unique_ptr<vkb::core::Buffer> buffer;
+	VkAccelerationStructureKHR          handle;
+	uint64_t                            device_address;
+	std::unique_ptr<vkb::core::BufferC> buffer;
 };
 
 class RaytracingBasic : public ApiVulkanSample
@@ -49,14 +48,14 @@ class RaytracingBasic : public ApiVulkanSample
 	AccelerationStructure bottom_level_acceleration_structure;
 	AccelerationStructure top_level_acceleration_structure;
 
-	std::unique_ptr<vkb::core::Buffer>                vertex_buffer;
-	std::unique_ptr<vkb::core::Buffer>                index_buffer;
+	std::unique_ptr<vkb::core::BufferC>               vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC>               index_buffer;
 	uint32_t                                          index_count;
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shader_groups{};
 
-	std::unique_ptr<vkb::core::Buffer> raygen_shader_binding_table;
-	std::unique_ptr<vkb::core::Buffer> miss_shader_binding_table;
-	std::unique_ptr<vkb::core::Buffer> hit_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> raygen_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> miss_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> hit_shader_binding_table;
 
 	struct StorageImage
 	{
@@ -73,7 +72,7 @@ class RaytracingBasic : public ApiVulkanSample
 		glm::mat4 view_inverse;
 		glm::mat4 proj_inverse;
 	} uniform_data;
-	std::unique_ptr<vkb::core::Buffer> ubo;
+	std::unique_ptr<vkb::core::BufferC> ubo;
 
 	VkPipeline            pipeline;
 	VkPipelineLayout      pipeline_layout;
@@ -83,7 +82,8 @@ class RaytracingBasic : public ApiVulkanSample
 	RaytracingBasic();
 	~RaytracingBasic();
 
-	void          request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void          request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void          request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	uint64_t      get_buffer_device_address(VkBuffer buffer);
 	ScratchBuffer create_scratch_buffer(VkDeviceSize size);
 	void          delete_scratch_buffer(ScratchBuffer &scratch_buffer);
@@ -103,4 +103,4 @@ class RaytracingBasic : public ApiVulkanSample
 	virtual void  render(float delta_time) override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_ray_tracing_basic();
+std::unique_ptr<vkb::VulkanSampleC> create_ray_tracing_basic();

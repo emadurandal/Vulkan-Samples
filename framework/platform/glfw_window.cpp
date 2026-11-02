@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,8 +18,6 @@
 #include "glfw_window.h"
 
 #include <unordered_map>
-
-#include "common/error.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -49,6 +47,11 @@ void window_size_callback(GLFWwindow *window, int width, int height)
 	if (auto platform = reinterpret_cast<Platform *>(glfwGetWindowUserPointer(window)))
 	{
 		platform->resize(width, height);
+
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+		// On Wayland, window may lose focus during resize. Force focus to ensure rendering continues.
+		platform->set_focus(true);
+#endif
 	}
 }
 
@@ -334,7 +337,7 @@ GlfwWindow::~GlfwWindow()
 	glfwTerminate();
 }
 
-VkSurfaceKHR GlfwWindow::create_surface(Instance &instance)
+VkSurfaceKHR GlfwWindow::create_surface(vkb::core::InstanceC &instance)
 {
 	return create_surface(instance.get_handle(), VK_NULL_HANDLE);
 }

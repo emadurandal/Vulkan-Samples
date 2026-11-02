@@ -1,4 +1,4 @@
-/* Copyright (c) 2020-2024, Sascha Willems
+/* Copyright (c) 2020-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -55,7 +55,7 @@ class FragmentShadingRate : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> scene;
+		std::unique_ptr<vkb::core::BufferC> scene;
 	} uniform_buffers;
 
 	struct UBOScene
@@ -84,7 +84,8 @@ class FragmentShadingRate : public ApiVulkanSample
 
 	FragmentShadingRate();
 	~FragmentShadingRate();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         create_shading_rate_attachment();
 	void         invalidate_shading_rate_attachment();
 	void         setup_render_pass() override;
@@ -104,4 +105,4 @@ class FragmentShadingRate : public ApiVulkanSample
 	virtual bool resize(const uint32_t width, const uint32_t height) override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_fragment_shading_rate();
+std::unique_ptr<vkb::VulkanSampleC> create_fragment_shading_rate();

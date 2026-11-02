@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Mobica Limited
+/* Copyright (c) 2024-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -24,12 +24,6 @@
 DynamicPrimitiveClipping::DynamicPrimitiveClipping()
 {
 	title = "Dynamic primitive clipping";
-	set_api_version(VK_API_VERSION_1_1);
-
-	// Extensions required by vkCmdSetDepthClipEnableEXT().
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
-	add_device_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
 }
 
 DynamicPrimitiveClipping::~DynamicPrimitiveClipping()
@@ -75,7 +69,16 @@ bool DynamicPrimitiveClipping::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-void DynamicPrimitiveClipping::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DynamicPrimitiveClipping::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Extensions required by vkCmdSetDepthClipEnableEXT().
+	requested_extensions[VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME]        = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void DynamicPrimitiveClipping::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// shaderClipDistance feature is required in order to gl_ClipDistance builtin shader variable to work.
 	if (gpu.get_features().shaderClipDistance)
@@ -84,18 +87,12 @@ void DynamicPrimitiveClipping::request_gpu_features(vkb::PhysicalDevice &gpu)
 	}
 	else
 	{
-		throw vkb::VulkanException(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support gl_ClipDistance builtin shader variable");
+		throw vkb::common::VulkanExceptionC(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support gl_ClipDistance builtin shader variable");
 	}
 
 	// Features required by vkCmdSetDepthClipEnableEXT().
-	{
-		auto &features           = gpu.request_extension_features<VkPhysicalDeviceDepthClipEnableFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT);
-		features.depthClipEnable = VK_TRUE;
-	}
-	{
-		auto &features                                = gpu.request_extension_features<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT);
-		features.extendedDynamicState3DepthClipEnable = VK_TRUE;
-	}
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDepthClipEnableFeaturesEXT, depthClipEnable);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState3FeaturesEXT, extendedDynamicState3DepthClipEnable);
 }
 
 void DynamicPrimitiveClipping::build_command_buffers()
@@ -303,8 +300,8 @@ void DynamicPrimitiveClipping::prepare_pipelines()
 
 	// Load shaders.
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
-	shader_stages[0] = load_shader("dynamic_primitive_clipping", "primitive_clipping.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("dynamic_primitive_clipping", "primitive_clipping.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("dynamic_primitive_clipping", "primitive_clipping.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("dynamic_primitive_clipping", "primitive_clipping.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// We need to specify the pipeline layout and the render pass description up front as well.
 	VkGraphicsPipelineCreateInfo pipeline_create_info = vkb::initializers::pipeline_create_info(pipeline_layouts.models, render_pass);
@@ -326,14 +323,14 @@ void DynamicPrimitiveClipping::prepare_pipelines()
 void DynamicPrimitiveClipping::prepare_uniform_buffers()
 {
 	// We will render the same object twice using two different sets of parameters called "positive" and "negative".
-	uniform_buffers.buffer_positive = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                      sizeof(UBOVS),
-	                                                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
-	uniform_buffers.buffer_negative = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                      sizeof(UBOVS),
-	                                                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.buffer_positive = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                       sizeof(UBOVS),
+	                                                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                       VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.buffer_negative = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                       sizeof(UBOVS),
+	                                                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                       VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -387,7 +384,7 @@ void DynamicPrimitiveClipping::setup_descriptor_sets()
 	vkUpdateDescriptorSets(get_device().get_handle(), static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, NULL);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_dynamic_primitive_clipping()
+std::unique_ptr<vkb::VulkanSampleC> create_dynamic_primitive_clipping()
 {
 	return std::make_unique<DynamicPrimitiveClipping>();
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2020, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -32,12 +32,14 @@
 
 namespace vkb
 {
-class Device;
-
 namespace core
 {
+template <vkb::BindingType bindingType>
+class Device;
+using DeviceC = Device<vkb::BindingType::C>;
+
 class ImageView;
-}
+}        // namespace core
 
 /**
  * @brief Struct to hold the internal state of the Resource Cache
@@ -45,7 +47,7 @@ class ImageView;
  */
 struct ResourceCacheState
 {
-	std::unordered_map<std::size_t, ShaderModule> shader_modules;
+	std::unordered_map<std::size_t, vkb::core::ShaderModuleC> shader_modules;
 
 	std::unordered_map<std::size_t, PipelineLayout> pipeline_layouts;
 
@@ -79,7 +81,7 @@ struct ResourceCacheState
 class ResourceCache
 {
   public:
-	ResourceCache(Device &device);
+	ResourceCache(vkb::core::DeviceC &device);
 
 	ResourceCache(const ResourceCache &) = delete;
 
@@ -95,28 +97,28 @@ class ResourceCache
 
 	void set_pipeline_cache(VkPipelineCache pipeline_cache);
 
-	ShaderModule &request_shader_module(VkShaderStageFlagBits stage, const ShaderSource &glsl_source, const ShaderVariant &shader_variant = {});
+	vkb::core::ShaderModuleC &request_shader_module(VkShaderStageFlagBits stage, const vkb::core::ShaderSource &glsl_source, const vkb::core::ShaderVariant &shader_variant = {});
 
-	PipelineLayout &request_pipeline_layout(const std::vector<ShaderModule *> &shader_modules);
+	PipelineLayout &request_pipeline_layout(const std::vector<vkb::core::ShaderModuleC *> &shader_modules);
 
-	DescriptorSetLayout &request_descriptor_set_layout(const uint32_t                     set_index,
-	                                                   const std::vector<ShaderModule *> &shader_modules,
-	                                                   const std::vector<ShaderResource> &set_resources);
+	DescriptorSetLayout &request_descriptor_set_layout(const uint32_t                                 set_index,
+	                                                   const std::vector<vkb::core::ShaderModuleC *> &shader_modules,
+	                                                   const std::vector<vkb::core::ShaderResourceC> &set_resources);
 
-	GraphicsPipeline &request_graphics_pipeline(PipelineState &pipeline_state);
+	GraphicsPipeline &request_graphics_pipeline(vkb::rendering::PipelineStateC &pipeline_state);
 
-	ComputePipeline &request_compute_pipeline(PipelineState &pipeline_state);
+	ComputePipeline &request_compute_pipeline(vkb::rendering::PipelineStateC &pipeline_state);
 
-	DescriptorSet &request_descriptor_set(DescriptorSetLayout &                     descriptor_set_layout,
+	DescriptorSet &request_descriptor_set(DescriptorSetLayout                      &descriptor_set_layout,
 	                                      const BindingMap<VkDescriptorBufferInfo> &buffer_infos,
-	                                      const BindingMap<VkDescriptorImageInfo> & image_infos);
+	                                      const BindingMap<VkDescriptorImageInfo>  &image_infos);
 
-	RenderPass &request_render_pass(const std::vector<Attachment> &   attachments,
-	                                const std::vector<LoadStoreInfo> &load_store_infos,
-	                                const std::vector<SubpassInfo> &  subpasses);
+	RenderPass &request_render_pass(const std::vector<vkb::rendering::AttachmentC> &attachments,
+	                                const std::vector<LoadStoreInfo>               &load_store_infos,
+	                                const std::vector<SubpassInfo>                 &subpasses);
 
-	Framebuffer &request_framebuffer(const RenderTarget &render_target,
-	                                 const RenderPass &  render_pass);
+	Framebuffer &request_framebuffer(const vkb::rendering::RenderTargetC &render_target,
+	                                 const RenderPass                    &render_pass);
 
 	void clear_pipelines();
 
@@ -132,7 +134,7 @@ class ResourceCache
 	const ResourceCacheState &get_internal_state() const;
 
   private:
-	Device &device;
+	vkb::core::DeviceC &device;
 
 	ResourceRecord recorder;
 

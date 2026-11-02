@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Sascha Willems
+/* Copyright (c) 2023-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -42,7 +42,7 @@ class GraphicsPipelineLibrary : public ApiVulkanSample
 		glm::vec4 lightPos   = glm::vec4(-10.0f, -5.0f, 15.0f, 0.0f);
 	} ubo_vs;
 
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer{nullptr};
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer{nullptr};
 
 	struct
 	{
@@ -72,7 +72,8 @@ class GraphicsPipelineLibrary : public ApiVulkanSample
 
 	GraphicsPipelineLibrary();
 	~GraphicsPipelineLibrary();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         load_assets();
 	void         setup_descriptor_pool();

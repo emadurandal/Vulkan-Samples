@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,7 +25,7 @@
 /**
  * @brief Using framebuffer compression to reduce bandwidth
  */
-class AFBCSample : public vkb::VulkanSample<vkb::BindingType::C>
+class AFBCSample : public vkb::VulkanSampleC
 {
   public:
 	AFBCSample();
@@ -33,7 +33,7 @@ class AFBCSample : public vkb::VulkanSample<vkb::BindingType::C>
 	virtual ~AFBCSample() = default;
 
 	virtual bool prepare(const vkb::ApplicationOptions &options) override;
-
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 	virtual void update(float delta_time) override;
 
   private:
@@ -47,7 +47,7 @@ class AFBCSample : public vkb::VulkanSample<vkb::BindingType::C>
 
 	bool afbc_enabled{false};
 
-	std::chrono::system_clock::time_point start_time;
+	float elapsed_time{0.0f};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_afbc();
+std::unique_ptr<vkb::VulkanSampleC> create_afbc();

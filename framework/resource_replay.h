@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,6 +18,8 @@
 #pragma once
 
 #include "resource_record.h"
+#include <functional>
+#include <sstream>
 
 namespace vkb
 {
@@ -47,7 +49,7 @@ class ResourceReplay
 
 	std::unordered_map<ResourceType, ResourceFunc> stream_resources;
 
-	std::vector<ShaderModule *> shader_modules;
+	std::vector<vkb::core::ShaderModuleC *> shader_modules;
 
 	std::vector<PipelineLayout *> pipeline_layouts;
 

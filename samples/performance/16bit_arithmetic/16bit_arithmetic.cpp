@@ -1,4 +1,4 @@
-/* Copyright (c) 2020-2024, Arm Limited and Contributors
+/* Copyright (c) 2020-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,18 +28,6 @@ static constexpr unsigned NumBlobs = 16;
 
 KHR16BitArithmeticSample::KHR16BitArithmeticSample()
 {
-	// Enables required extensions to use 16-bit storage.
-	// For this sample, this is not optional.
-	// This sample also serves as a tutorial on how to use 16-bit storage
-	// for SSBOs and push constants.
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, false);
-	add_device_extension(VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, false);
-	add_device_extension(VK_KHR_16BIT_STORAGE_EXTENSION_NAME, false);
-
-	// Enables the extension which allows shaders to use 16-bit float and 8-bit integer arithmetic.
-	// This sample will only make use of 16-bit floats.
-	add_device_extension(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME, true);
-
 	auto &config = get_configuration();
 
 	config.insert<vkb::BoolSetting>(0, khr_16bit_arith_enabled, false);
@@ -101,25 +89,25 @@ bool KHR16BitArithmeticSample::prepare(const vkb::ApplicationOptions &options)
 	// Upload the blob buffer.
 	auto &device = get_render_context().get_device();
 
-	blob_buffer         = std::make_unique<vkb::core::Buffer>(device, sizeof(initial_data_fp16),
-                                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                                      VMA_MEMORY_USAGE_GPU_ONLY);
-	auto staging_buffer = vkb::core::Buffer::create_staging_buffer(device, initial_data_fp16);
+	blob_buffer         = std::make_unique<vkb::core::BufferC>(device, sizeof(initial_data_fp16),
+                                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                       VMA_MEMORY_USAGE_GPU_ONLY);
+	auto staging_buffer = vkb::core::BufferC::create_staging_buffer(device, initial_data_fp16);
 
-	auto &cmd = device.request_command_buffer();
-	cmd.begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, VK_NULL_HANDLE);
-	cmd.copy_buffer(staging_buffer, *blob_buffer, sizeof(initial_data_fp16));
+	auto cmd = device.get_command_pool().request_command_buffer();
+	cmd->begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, VK_NULL_HANDLE);
+	cmd->copy_buffer(staging_buffer, *blob_buffer, sizeof(initial_data_fp16));
 
 	vkb::BufferMemoryBarrier barrier;
 	barrier.src_stage_mask  = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	barrier.dst_stage_mask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 	barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	barrier.dst_access_mask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-	cmd.buffer_memory_barrier(*blob_buffer, 0, VK_WHOLE_SIZE, barrier);
-	cmd.end();
+	cmd->buffer_memory_barrier(*blob_buffer, 0, VK_WHOLE_SIZE, barrier);
+	cmd->end();
 
 	auto &queue = device.get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0);
-	queue.submit(cmd, device.request_fence());
+	queue.submit(*cmd, device.get_fence_pool().request_fence());
 	device.get_fence_pool().wait();
 
 	// Create the target image we render into in the main compute shader.
@@ -148,22 +136,26 @@ bool KHR16BitArithmeticSample::prepare(const vkb::ApplicationOptions &options)
 	// Load shader modules.
 	auto &module =
 	    device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_COMPUTE_BIT,
-	                                                      vkb::ShaderSource{"16bit_arithmetic/compute_buffer.comp"});
+	                                                      vkb::core::ShaderSource{"16bit_arithmetic/compute_buffer.comp.spv"});
 	compute_layout = &device.get_resource_cache().request_pipeline_layout({&module});
 
 	if (supported_extensions)
 	{
-		vkb::ShaderVariant variant;
+		vkb::core::ShaderVariant variant;
 		if (supports_push_constant16)
 		{
-			variant.add_define("PUSH_CONSTANT_16");
+			auto &module_fp16 =
+			    device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_COMPUTE_BIT,
+			                                                      vkb::core::ShaderSource{"16bit_arithmetic/compute_buffer_fp16.comp.spv"}, variant);
+			compute_layout_fp16 = &device.get_resource_cache().request_pipeline_layout({&module_fp16});
 		}
-
-		const char *shader = "16bit_arithmetic/compute_buffer_fp16.comp";
-		auto       &module_fp16 =
-		    device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_COMPUTE_BIT,
-		                                                      vkb::ShaderSource{shader}, variant);
-		compute_layout_fp16 = &device.get_resource_cache().request_pipeline_layout({&module_fp16});
+		else
+		{
+			auto &module_fp16 =
+			    device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_COMPUTE_BIT,
+			                                                      vkb::core::ShaderSource{"16bit_arithmetic/compute_buffer_fp16_fallback.comp.spv"}, variant);
+			compute_layout_fp16 = &device.get_resource_cache().request_pipeline_layout({&module_fp16});
+		}
 	}
 	else
 	{
@@ -171,11 +163,9 @@ bool KHR16BitArithmeticSample::prepare(const vkb::ApplicationOptions &options)
 	}
 
 	// Setup the visualization subpass which is there to blit the final result to screen.
-	vkb::ShaderSource vertex_source{"16bit_arithmetic/visualize.vert"};
-	vkb::ShaderSource fragment_source{"16bit_arithmetic/visualize.frag"};
-	auto              subpass = std::make_unique<VisualizationSubpass>(get_render_context(),
-                                                          std::move(vertex_source),
-                                                          std::move(fragment_source));
+	vkb::core::ShaderSource vertex_source{"16bit_arithmetic/visualize.vert.spv"};
+	vkb::core::ShaderSource fragment_source{"16bit_arithmetic/visualize.frag.spv"};
+	auto                    subpass = std::make_unique<VisualizationSubpass>(get_render_context(), std::move(vertex_source), std::move(fragment_source));
 
 	subpass->view    = image_view.get();
 	subpass->sampler = sampler.get();
@@ -188,24 +178,24 @@ bool KHR16BitArithmeticSample::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-KHR16BitArithmeticSample::VisualizationSubpass::VisualizationSubpass(vkb::RenderContext &context,
-                                                                     vkb::ShaderSource &&vertex_source,
-                                                                     vkb::ShaderSource &&fragment_source) :
-    vkb::Subpass(context, std::move(vertex_source), std::move(fragment_source))
+KHR16BitArithmeticSample::VisualizationSubpass::VisualizationSubpass(vkb::rendering::RenderContextC &context,
+                                                                     vkb::core::ShaderSource       &&vertex_source,
+                                                                     vkb::core::ShaderSource       &&fragment_source) :
+    vkb::rendering::SubpassC(context, std::move(vertex_source), std::move(fragment_source))
 {
 	set_output_attachments({0});
 }
 
-void KHR16BitArithmeticSample::VisualizationSubpass::draw(vkb::CommandBuffer &command_buffer)
+void KHR16BitArithmeticSample::VisualizationSubpass::draw(vkb::core::CommandBufferC &command_buffer)
 {
 	command_buffer.bind_pipeline_layout(*layout);
 
 	// A depth-stencil attachment exists in the default render pass, make sure we ignore it.
-	vkb::DepthStencilState ds_state = {};
-	ds_state.depth_test_enable      = VK_FALSE;
-	ds_state.stencil_test_enable    = VK_FALSE;
-	ds_state.depth_write_enable     = VK_FALSE;
-	ds_state.depth_compare_op       = VK_COMPARE_OP_ALWAYS;
+	vkb::rendering::DepthStencilStateC ds_state = {};
+	ds_state.depth_test_enable                  = VK_FALSE;
+	ds_state.stencil_test_enable                = VK_FALSE;
+	ds_state.depth_write_enable                 = VK_FALSE;
+	ds_state.depth_compare_op                   = VK_COMPARE_OP_ALWAYS;
 	command_buffer.set_depth_stencil_state(ds_state);
 
 	command_buffer.bind_image(*view, *sampler, 0, 0, 0);
@@ -214,29 +204,43 @@ void KHR16BitArithmeticSample::VisualizationSubpass::draw(vkb::CommandBuffer &co
 
 void KHR16BitArithmeticSample::VisualizationSubpass::prepare()
 {
-	auto                            &device             = get_render_context().get_device();
-	auto                            &vert_shader_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_VERTEX_BIT, get_vertex_shader());
-	auto                            &frag_shader_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_FRAGMENT_BIT, get_fragment_shader());
-	std::vector<vkb::ShaderModule *> shader_modules{&vert_shader_module, &frag_shader_module};
+	auto                                   &device             = get_render_context().get_device();
+	auto                                   &vert_shader_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_VERTEX_BIT, get_vertex_shader());
+	auto                                   &frag_shader_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_FRAGMENT_BIT, get_fragment_shader());
+	std::vector<vkb::core::ShaderModuleC *> shader_modules{&vert_shader_module, &frag_shader_module};
 	layout = &device.get_resource_cache().request_pipeline_layout(shader_modules);
 }
 
-void KHR16BitArithmeticSample::request_gpu_features(vkb::PhysicalDevice &gpu)
+void KHR16BitArithmeticSample::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
 {
-	auto &storage_16bit_features =
-	    gpu.request_extension_features<VkPhysicalDevice16BitStorageFeatures>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
-	auto &arithmetic_16bit_8bit =
-	    gpu.request_extension_features<VkPhysicalDeviceFloat16Int8FeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR);
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
 
-	// Required features.
-	storage_16bit_features.storageBuffer16BitAccess = VK_TRUE;
+	// Enables required extensions to use 16-bit storage.
+	// For this sample, this is not optional.
+	// This sample also serves as a tutorial on how to use 16-bit storage
+	// for SSBOs and push constants.
+	requested_extensions[VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_16BIT_STORAGE_EXTENSION_NAME]                = vkb::RequestMode::Required;
 
-	// Optional features.
-	supported_extensions     = arithmetic_16bit_8bit.shaderFloat16 == VK_TRUE;
-	supports_push_constant16 = storage_16bit_features.storagePushConstant16 == VK_TRUE;
+	// Enables the extension which allows shaders to use 16-bit float and 8-bit integer arithmetic.
+	// This sample will only make use of 16-bit floats.
+	requested_extensions[VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME] = vkb::RequestMode::Optional;
 }
 
-void KHR16BitArithmeticSample::draw_renderpass(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target)
+void KHR16BitArithmeticSample::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	// Required features.
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDevice16BitStorageFeatures, storageBuffer16BitAccess);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDevice16BitStorageFeatures, uniformAndStorageBuffer16BitAccess);
+
+	// Optional features.
+	supported_extensions = REQUEST_OPTIONAL_FEATURE(gpu, VkPhysicalDeviceFloat16Int8FeaturesKHR, shaderFloat16);
+
+	supports_push_constant16 =
+	    REQUEST_OPTIONAL_FEATURE(gpu, VkPhysicalDevice16BitStorageFeatures, storagePushConstant16);
+}
+
+void KHR16BitArithmeticSample::draw_renderpass(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)
 {
 	if (khr_16bit_arith_enabled)
 	{
@@ -348,7 +352,7 @@ void KHR16BitArithmeticSample::draw_gui()
 	    /* lines = */ 1);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_16bit_arithmetic()
+std::unique_ptr<vkb::VulkanSampleC> create_16bit_arithmetic()
 {
 	return std::make_unique<KHR16BitArithmeticSample>();
 }

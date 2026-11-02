@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Arm Limited and Contributors
+/* Copyright (c) 2024-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -27,13 +27,6 @@
 
 ImageCompressionControlSample::ImageCompressionControlSample()
 {
-	// Extensions of interest in this sample (optional)
-	add_device_extension(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME, true);
-	add_device_extension(VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_EXTENSION_NAME, true);
-
-	// Extension dependency requirements (given that instance API version is 1.0.0)
-	add_instance_extension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, true);
-
 	auto &config = get_configuration();
 
 	// Batch mode will test the toggle between different compression modes
@@ -42,21 +35,32 @@ ImageCompressionControlSample::ImageCompressionControlSample()
 	config.insert<vkb::IntSetting>(2, static_cast<int>(gui_target_compression), 2);
 }
 
-void ImageCompressionControlSample::request_gpu_features(vkb::PhysicalDevice &gpu)
+void ImageCompressionControlSample::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Extensions of interest in this sample (optional)
+	requested_extensions[VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME]           = vkb::RequestMode::Optional;
+	requested_extensions[VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void ImageCompressionControlSample::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	if (gpu.is_extension_supported(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME))
 	{
-		auto &compression_control_features = gpu.request_extension_features<VkPhysicalDeviceImageCompressionControlFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT);
-
-		compression_control_features.imageCompressionControl = VK_TRUE;
+		REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceImageCompressionControlFeaturesEXT, imageCompressionControl);
 	}
 
 	if (gpu.is_extension_supported(VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_EXTENSION_NAME))
 	{
-		auto &compression_control_swapchain_features = gpu.request_extension_features<VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT);
-
-		compression_control_swapchain_features.imageCompressionControlSwapchain = VK_TRUE;
+		REQUEST_OPTIONAL_FEATURE(gpu, VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT, imageCompressionControlSwapchain);
 	}
+}
+
+void ImageCompressionControlSample::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME] = vkb::RequestMode::Optional;
 }
 
 bool ImageCompressionControlSample::prepare(const vkb::ApplicationOptions &options)
@@ -71,21 +75,21 @@ bool ImageCompressionControlSample::prepare(const vkb::ApplicationOptions &optio
 	auto &camera_node = vkb::add_free_camera(get_scene(), "main_camera", get_render_context().get_surface_extent());
 	camera            = dynamic_cast<vkb::sg::PerspectiveCamera *>(&camera_node.get_component<vkb::sg::Camera>());
 
-	vkb::ShaderSource scene_vs("base.vert");
-	vkb::ShaderSource scene_fs("base.frag");
-	auto              scene_subpass = std::make_unique<vkb::ForwardSubpass>(get_render_context(), std::move(scene_vs), std::move(scene_fs), get_scene(), *camera);
+	vkb::core::ShaderSource scene_vs("base.vert.spv");
+	vkb::core::ShaderSource scene_fs("base.frag.spv");
+	auto                    scene_subpass = std::make_unique<vkb::rendering::subpasses::ForwardSubpassC>(get_render_context(), std::move(scene_vs), std::move(scene_fs), get_scene(), *camera);
 	scene_subpass->set_output_attachments({static_cast<int>(Attachments::Color)});
 
 	// Forward rendering pass
-	auto render_pipeline = std::make_unique<vkb::RenderPipeline>();
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>();
 	render_pipeline->add_subpass(std::move(scene_subpass));
 	render_pipeline->set_load_store(scene_load_store);
 	set_render_pipeline(std::move(render_pipeline));
 
 	// Post-processing pass (chromatic aberration)
-	vkb::ShaderSource postprocessing_vs("postprocessing/postprocessing.vert");
+	vkb::core::ShaderSource postprocessing_vs("postprocessing/postprocessing.vert.spv");
 	postprocessing_pipeline = std::make_unique<vkb::PostProcessingPipeline>(get_render_context(), std::move(postprocessing_vs));
-	postprocessing_pipeline->add_pass().add_subpass(vkb::ShaderSource("postprocessing/chromatic_aberration.frag"));
+	postprocessing_pipeline->add_pass().add_subpass(vkb::core::ShaderSource("postprocessing/chromatic_aberration.frag.spv"));
 
 	// Trigger recreation of Swapchain and render targets, with initial compression parameters
 	update_render_targets();
@@ -96,7 +100,7 @@ bool ImageCompressionControlSample::prepare(const vkb::ApplicationOptions &optio
 	create_gui(*window, &get_stats());
 
 	// Hide GUI compression options other than default if the required extension is not supported
-	if (!get_device().is_enabled(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME))
+	if (!get_device().is_extension_enabled(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME))
 	{
 		for (int i = 0; i < static_cast<int>(TargetCompression::Count); i++)
 		{
@@ -155,9 +159,9 @@ void ImageCompressionControlSample::create_render_context()
 		std::vector<VkSurfaceFormatKHR> new_surface_priority_list;
 		for (auto const &surface_priority : get_surface_priority_list())
 		{
-			auto it = std::find_if(surface_formats_that_support_compression.begin(), surface_formats_that_support_compression.end(),
-			                       [&](VkSurfaceFormatKHR &sf) { return surface_priority.format == sf.format &&
-				                                                        surface_priority.colorSpace == sf.colorSpace; });
+			auto it = std::ranges::find_if(surface_formats_that_support_compression,
+			                               [&](VkSurfaceFormatKHR &sf) { return surface_priority.format == sf.format &&
+				                                                                surface_priority.colorSpace == sf.colorSpace; });
 			if (it != surface_formats_that_support_compression.end())
 			{
 				new_surface_priority_list.push_back(*it);
@@ -172,7 +176,7 @@ void ImageCompressionControlSample::create_render_context()
 			new_surface_priority_list.push_back(remaining_format);
 		}
 
-		VulkanSample<vkb::BindingType::C>::create_render_context(new_surface_priority_list);
+		vkb::VulkanSampleC::create_render_context(new_surface_priority_list);
 	}
 
 	/**
@@ -197,7 +201,7 @@ void ImageCompressionControlSample::prepare_render_context()
 	get_render_context().prepare(1, std::bind(&ImageCompressionControlSample::create_render_target, this, std::placeholders::_1));
 }
 
-std::unique_ptr<vkb::RenderTarget> ImageCompressionControlSample::create_render_target(vkb::core::Image &&swapchain_image)
+std::unique_ptr<vkb::rendering::RenderTargetC> ImageCompressionControlSample::create_render_target(vkb::core::Image &&swapchain_image)
 {
 	/**
 	 * The render passes will use 3 attachments: Color, Depth and Swapchain.
@@ -219,7 +223,7 @@ std::unique_ptr<vkb::RenderTarget> ImageCompressionControlSample::create_render_
 		                                  VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM, VK_FORMAT_B8G8R8A8_SRGB};
 
 		VkFormat chosen_format{VK_FORMAT_UNDEFINED};
-		if (get_device().is_enabled(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME))
+		if (get_device().is_extension_enabled(VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME))
 		{
 			for (auto &candidate_format : format_list)
 			{
@@ -349,7 +353,7 @@ std::unique_ptr<vkb::RenderTarget> ImageCompressionControlSample::create_render_
 	images.push_back(std::move(color_image));
 	scene_load_store.push_back({VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE});
 
-	return std::make_unique<vkb::RenderTarget>(std::move(images));
+	return std::make_unique<vkb::rendering::RenderTargetC>(std::move(images));
 }
 
 void ImageCompressionControlSample::update(float delta_time)
@@ -438,7 +442,7 @@ VkImageCompressionFixedRateFlagBitsEXT ImageCompressionControlSample::select_fix
 	return VK_IMAGE_COMPRESSION_FIXED_RATE_NONE_EXT;
 }
 
-void ImageCompressionControlSample::render(vkb::CommandBuffer &command_buffer)
+void ImageCompressionControlSample::render(vkb::core::CommandBufferC &command_buffer)
 {
 	// Scene (forward rendering) pass
 	VulkanSample::render(command_buffer);
@@ -482,7 +486,7 @@ inline T generate_combo(T current_value, const char *combo_label, const std::uno
 	{
 		for (const auto &it : enum_to_string)
 		{
-			if (skip_values && std::find(skip_values->begin(), skip_values->end(), it.first) != skip_values->end())
+			if (skip_values && std::ranges::find(*skip_values, it.first) != skip_values->end())
 			{
 				continue;
 			}
@@ -576,7 +580,7 @@ void ImageCompressionControlSample::draw_gui()
 	    lines);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_image_compression_control()
+std::unique_ptr<vkb::VulkanSampleC> create_image_compression_control()
 {
 	return std::make_unique<ImageCompressionControlSample>();
 }

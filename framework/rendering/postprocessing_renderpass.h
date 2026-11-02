@@ -1,4 +1,4 @@
-/* Copyright (c) 2020-2024, Arm Limited and Contributors
+/* Copyright (c) 2020-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -68,11 +68,14 @@ class PostProcessingRenderPass;
 /**
  * @brief A single step of a vkb::PostProcessingRenderPass.
  */
-class PostProcessingSubpass : public Subpass
+class PostProcessingSubpass : public vkb::rendering::SubpassC
 {
   public:
-	PostProcessingSubpass(PostProcessingRenderPass *parent, RenderContext &render_context, ShaderSource &&triangle_vs,
-	                      ShaderSource &&fs, ShaderVariant &&fs_variant = {});
+	PostProcessingSubpass(PostProcessingRenderPass       *parent,
+	                      vkb::rendering::RenderContextC &render_context,
+	                      vkb::core::ShaderSource       &&triangle_vs,
+	                      vkb::core::ShaderSource       &&fs,
+	                      vkb::core::ShaderVariant      &&fs_variant = {});
 
 	PostProcessingSubpass(const PostProcessingSubpass &to_copy)            = delete;
 	PostProcessingSubpass &operator=(const PostProcessingSubpass &to_copy) = delete;
@@ -114,7 +117,7 @@ class PostProcessingSubpass : public Subpass
 	/**
 	 * @brief Returns the shader variant used for this postprocess' fragment shader.
 	 */
-	inline ShaderVariant &get_fs_variant()
+	inline vkb::core::ShaderVariant &get_fs_variant()
 	{
 		return fs_variant;
 	}
@@ -122,7 +125,7 @@ class PostProcessingSubpass : public Subpass
 	/**
 	 * @brief Sets the shader variant that will be used for this postprocess' fragment shader.
 	 */
-	inline PostProcessingSubpass &set_fs_variant(ShaderVariant &&new_variant)
+	inline PostProcessingSubpass &set_fs_variant(vkb::core::ShaderVariant &&new_variant)
 	{
 		fs_variant = std::move(new_variant);
 
@@ -183,7 +186,7 @@ class PostProcessingSubpass : public Subpass
 	 * @brief A functor used to draw the primitives for a post-processing step.
 	 * @see default_draw_func()
 	 */
-	using DrawFunc = std::function<void(CommandBuffer &command_buffer, RenderTarget &render_target)>;
+	using DrawFunc = std::function<void(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)>;
 
 	/**
 	 * @brief Sets the function used to draw this postprocessing step.
@@ -194,12 +197,12 @@ class PostProcessingSubpass : public Subpass
 	/**
 	 * @brief The default function used to draw a step; it draws 1 instance with 3 vertices.
 	 */
-	static void default_draw_func(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target);
+	static void default_draw_func(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target);
 
   private:
 	PostProcessingRenderPass *parent;
 
-	ShaderVariant fs_variant{};
+	vkb::core::ShaderVariant fs_variant{};
 
 	AttachmentMap   input_attachments{};
 	SampledMap      sampled_images{};
@@ -210,7 +213,7 @@ class PostProcessingSubpass : public Subpass
 	DrawFunc draw_func{&PostProcessingSubpass::default_draw_func};
 
 	void prepare() override;
-	void draw(CommandBuffer &command_buffer) override;
+	void draw(vkb::core::CommandBufferC &command_buffer) override;
 };
 
 /**
@@ -229,7 +232,7 @@ class PostProcessingRenderPass : public PostProcessingPass<PostProcessingRenderP
 	PostProcessingRenderPass(PostProcessingRenderPass &&to_move)            = default;
 	PostProcessingRenderPass &operator=(PostProcessingRenderPass &&to_move) = default;
 
-	void draw(CommandBuffer &command_buffer, RenderTarget &default_render_target) override;
+	void draw(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &default_render_target) override;
 
 	/**
 	 * @brief Gets the step at the given index.
@@ -248,9 +251,9 @@ class PostProcessingRenderPass : public PostProcessingPass<PostProcessingRenderP
 	template <typename... ConstructorArgs>
 	PostProcessingSubpass &add_subpass(ConstructorArgs &&...args)
 	{
-		ShaderSource vs_copy         = get_triangle_vs();
-		auto         new_subpass     = std::make_unique<PostProcessingSubpass>(this, get_render_context(), std::move(vs_copy), std::forward<ConstructorArgs>(args)...);
-		auto        &new_subpass_ref = *new_subpass;
+		vkb::core::ShaderSource vs_copy         = get_triangle_vs();
+		auto                    new_subpass     = std::make_unique<PostProcessingSubpass>(this, get_render_context(), std::move(vs_copy), std::forward<ConstructorArgs>(args)...);
+		auto                   &new_subpass_ref = *new_subpass;
 
 		pipeline.add_subpass(std::move(new_subpass));
 
@@ -282,17 +285,17 @@ class PostProcessingRenderPass : public PostProcessingPass<PostProcessingRenderP
 
   private:
 	// An attachment sampled from a rendertarget
-	using SampledAttachmentSet = std::unordered_set<std::pair<RenderTarget *, uint32_t>, PairHasher>;
+	using SampledAttachmentSet = std::unordered_set<std::pair<vkb::rendering::RenderTargetC *, uint32_t>, PairHasher>;
 
 	/**
 	 * @brief Transition input, sampled and output attachments as appropriate.
 	 * @remarks If a RenderTarget is not explicitly set for this pass, fallback_render_target is used.
 	 */
-	void transition_attachments(const AttachmentSet        &input_attachments,
-	                            const SampledAttachmentSet &sampled_attachments,
-	                            const AttachmentSet        &output_attachments,
-	                            CommandBuffer              &command_buffer,
-	                            RenderTarget               &fallback_render_target);
+	void transition_attachments(const AttachmentSet           &input_attachments,
+	                            const SampledAttachmentSet    &sampled_attachments,
+	                            const AttachmentSet           &output_attachments,
+	                            vkb::core::CommandBufferC     &command_buffer,
+	                            vkb::rendering::RenderTargetC &fallback_render_target);
 
 	/**
 	 * @brief Select appropriate load/store operations for each buffer of render_target,
@@ -300,27 +303,27 @@ class PostProcessingRenderPass : public PostProcessingPass<PostProcessingRenderP
 	 *        in the pipeline.
 	 * @remarks If a RenderTarget is not explicitly set for this pass, fallback_render_target is used.
 	 */
-	void update_load_stores(const AttachmentSet        &input_attachments,
-	                        const SampledAttachmentSet &sampled_attachments,
-	                        const AttachmentSet        &output_attachments,
-	                        const RenderTarget         &fallback_render_target);
+	void update_load_stores(const AttachmentSet                 &input_attachments,
+	                        const SampledAttachmentSet          &sampled_attachments,
+	                        const AttachmentSet                 &output_attachments,
+	                        const vkb::rendering::RenderTargetC &fallback_render_target);
 
 	/**
 	 * @brief Transition images and prepare load/stores before draw()ing.
 	 */
-	void prepare_draw(CommandBuffer &command_buffer, RenderTarget &fallback_render_target);
+	void prepare_draw(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &fallback_render_target);
 
 	BarrierInfo get_src_barrier_info() const override;
 	BarrierInfo get_dst_barrier_info() const override;
 
-	RenderPipeline                    pipeline{};
-	std::unique_ptr<core::Sampler>    default_sampler{};
-	std::unique_ptr<core::Sampler>    default_sampler_nearest{};
-	RenderTarget                     *draw_render_target{nullptr};
-	std::vector<LoadStoreInfo>        load_stores{};
-	bool                              load_stores_dirty{true};
-	std::vector<uint8_t>              uniform_data{};
-	std::shared_ptr<BufferAllocation> uniform_buffer_alloc{};
+	vkb::rendering::RenderPipelineC    pipeline{};
+	std::unique_ptr<core::Sampler>     default_sampler{};
+	std::unique_ptr<core::Sampler>     default_sampler_nearest{};
+	vkb::rendering::RenderTargetC     *draw_render_target{nullptr};
+	std::vector<LoadStoreInfo>         load_stores{};
+	bool                               load_stores_dirty{true};
+	std::vector<uint8_t>               uniform_data{};
+	std::shared_ptr<BufferAllocationC> uniform_buffer_alloc{};
 };
 
 }        // namespace vkb

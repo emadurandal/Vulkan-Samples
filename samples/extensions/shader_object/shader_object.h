@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 Nintendo
+ * Copyright 2023-2026 Nintendo
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ class ShaderObject : public ApiVulkanSample
 		Shader(VkShaderStageFlagBits        stage,
 		       VkShaderStageFlags           next_stage,
 		       std::string                  name,
-		       const std::vector<uint8_t>  &vert_glsl_source,
+		       const std::vector<uint32_t> &vert_shader_source,
 		       const VkDescriptorSetLayout *pSetLayouts,
 		       const VkPushConstantRange   *pPushConstantRange);
 
@@ -128,19 +128,21 @@ class ShaderObject : public ApiVulkanSample
 	ShaderObject();
 	~ShaderObject() override;
 
-	const std::vector<const char *> get_validation_layers() override;
-
 	bool resize(const uint32_t width, const uint32_t height) override;
 	bool prepare(const vkb::ApplicationOptions &options) override;
 	void setup_framebuffer() override;
 	void setup_render_pass() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void build_command_buffers() override;
 	void render(float delta_time) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 	void build_linked_shaders(VkDevice device, Shader *vert, Shader *frag);
 	void build_shader(VkDevice device, Shader *shader);
 	void bind_shader(VkCommandBuffer cmd_buffer, ShaderObject::Shader *shader);
+
+  protected:
+	virtual void request_layers(std::unordered_map<std::string, vkb::RequestMode> &requested_layers) const override;
 
   private:
 	void create_default_sampler();
@@ -173,9 +175,9 @@ class ShaderObject : public ApiVulkanSample
 
 	struct Terrain
 	{
-		std::unique_ptr<vkb::core::Buffer> vertices;
-		std::unique_ptr<vkb::core::Buffer> indices;
-		uint32_t                           index_count;
+		std::unique_ptr<vkb::core::BufferC> vertices;
+		std::unique_ptr<vkb::core::BufferC> indices;
+		uint32_t                            index_count;
 	} terrain;
 
 	struct CameraMatsUBO
@@ -195,7 +197,7 @@ class ShaderObject : public ApiVulkanSample
 	float elapsed_iteration_time = 0;
 	float max_iteration_time     = 0.5f;
 
-	std::unique_ptr<vkb::core::Buffer> camera_mats_ubo_buffer;
+	std::unique_ptr<vkb::core::BufferC> camera_mats_ubo_buffer;
 
 	std::unique_ptr<vkb::sg::SubMesh> skybox;
 	std::unique_ptr<vkb::sg::SubMesh> torus;
@@ -288,4 +290,4 @@ class ShaderObject : public ApiVulkanSample
 	std::default_random_engine rng;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_shader_object();
+std::unique_ptr<vkb::VulkanSampleC> create_shader_object();

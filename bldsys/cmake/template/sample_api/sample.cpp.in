@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, Arm Limited and Contributors
+/* Copyright (c) 2024-2025, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,7 +23,7 @@
 
 @SAMPLE_NAME@::~@SAMPLE_NAME@()
 {
-	if (device)
+	if (has_device())
 	{
 		vkDestroyPipeline(get_device().get_handle(), sample_pipeline, nullptr);
 		vkDestroyPipelineLayout(get_device().get_handle(), sample_pipeline_layout, nullptr);
@@ -80,8 +80,8 @@ void @SAMPLE_NAME@::prepare_pipelines()
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
 
 	// Vertex stage of the pipeline
-	shader_stages[0] = load_shader("triangle.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("triangle.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("triangle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// We need to specify the pipeline layout and the render pass description up front as well.
 	VkGraphicsPipelineCreateInfo pipeline_create_info = vkb::initializers::pipeline_create_info(sample_pipeline_layout, render_pass);
@@ -168,7 +168,7 @@ void @SAMPLE_NAME@::render(float delta_time)
 	ApiVulkanSample::submit_frame();
 }
 
-std::unique_ptr<vkb::VulkanSample> create_@SAMPLE_NAME_FILE@()
+std::unique_ptr<vkb::VulkanSampleC> create_@SAMPLE_NAME_FILE@()
 {
 	return std::make_unique<@SAMPLE_NAME@>();
 }

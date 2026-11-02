@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -50,19 +50,19 @@ bool LayoutTransitions::prepare(const vkb::ApplicationOptions &options)
 	auto &camera_node = vkb::add_free_camera(get_scene(), "main_camera", get_render_context().get_surface_extent());
 	camera            = &camera_node.get_component<vkb::sg::Camera>();
 
-	auto geometry_vs = vkb::ShaderSource{"deferred/geometry.vert"};
-	auto geometry_fs = vkb::ShaderSource{"deferred/geometry.frag"};
+	auto geometry_vs = vkb::core::ShaderSource{"deferred/geometry.vert.spv"};
+	auto geometry_fs = vkb::core::ShaderSource{"deferred/geometry.frag.spv"};
 
-	std::unique_ptr<vkb::Subpass> gbuffer_pass =
-	    std::make_unique<vkb::GeometrySubpass>(get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
+	std::unique_ptr<vkb::rendering::SubpassC> gbuffer_pass = std::make_unique<vkb::rendering::subpasses::GeometrySubpassC>(
+	    get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
 	gbuffer_pass->set_output_attachments({1, 2, 3});
 	gbuffer_pipeline.add_subpass(std::move(gbuffer_pass));
 	gbuffer_pipeline.set_load_store(vkb::gbuffer::get_clear_store_all());
 
-	auto lighting_vs = vkb::ShaderSource{"deferred/lighting.vert"};
-	auto lighting_fs = vkb::ShaderSource{"deferred/lighting.frag"};
+	auto lighting_vs = vkb::core::ShaderSource{"deferred/lighting.vert.spv"};
+	auto lighting_fs = vkb::core::ShaderSource{"deferred/lighting.frag.spv"};
 
-	std::unique_ptr<vkb::Subpass> lighting_subpass =
+	std::unique_ptr<vkb::rendering::SubpassC> lighting_subpass =
 	    std::make_unique<vkb::LightingSubpass>(get_render_context(), std::move(lighting_vs), std::move(lighting_fs), *camera, get_scene());
 	lighting_subpass->set_input_attachments({1, 2, 3});
 	lighting_pipeline.add_subpass(std::move(lighting_subpass));
@@ -76,12 +76,27 @@ bool LayoutTransitions::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
+#if defined(PLATFORM__MACOS) && TARGET_OS_IOS && TARGET_OS_SIMULATOR
+void LayoutTransitions::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_EXT_LAYER_SETTINGS_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void LayoutTransitions::request_layer_settings(std::vector<VkLayerSettingEXT> &requested_layer_settings, vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const
+{
+	// On iOS Simulator use layer setting to disable MoltenVK's Metal argument buffers - otherwise blank display
+	vkb::VulkanSampleC::request_layer_settings(requested_layer_settings, scb);
+	requested_layer_settings.push_back({"MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", VK_LAYER_SETTING_TYPE_INT32_EXT, 1, &scb.add_chain_data<int32_t>(0)});
+}
+#endif
+
 void LayoutTransitions::prepare_render_context()
 {
 	get_render_context().prepare(1, [this](vkb::core::Image &&swapchain_image) { return create_render_target(std::move(swapchain_image)); });
 }
 
-std::unique_ptr<vkb::RenderTarget> LayoutTransitions::create_render_target(vkb::core::Image &&swapchain_image)
+std::unique_ptr<vkb::rendering::RenderTargetC> LayoutTransitions::create_render_target(vkb::core::Image &&swapchain_image)
 {
 	auto &device = swapchain_image.get_device();
 	auto &extent = swapchain_image.get_extent();
@@ -118,7 +133,7 @@ std::unique_ptr<vkb::RenderTarget> LayoutTransitions::create_render_target(vkb::
 	// Attachment 3
 	images.push_back(std::move(normal_image));
 
-	return std::make_unique<vkb::RenderTarget>(std::move(images));
+	return std::make_unique<vkb::rendering::RenderTargetC>(std::move(images));
 }
 
 VkImageLayout LayoutTransitions::pick_old_layout(VkImageLayout last_layout)
@@ -128,7 +143,7 @@ VkImageLayout LayoutTransitions::pick_old_layout(VkImageLayout last_layout)
 	           last_layout;
 }
 
-void LayoutTransitions::draw(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target)
+void LayoutTransitions::draw(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)
 {
 	// POI
 	//
@@ -255,7 +270,7 @@ void LayoutTransitions::draw_gui()
 	    /* lines = */ 2);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_layout_transitions()
+std::unique_ptr<vkb::VulkanSampleC> create_layout_transitions()
 {
 	return std::make_unique<LayoutTransitions>();
 }

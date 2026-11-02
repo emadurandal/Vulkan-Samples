@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,9 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2024 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
  */
 
 /*
@@ -24,7 +21,6 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
-#include "glsl_compiler.h"
 
 struct ObjMaterial
 {
@@ -48,25 +44,26 @@ struct ObjModelCpu
 
 struct ObjModelGpu
 {
-	uint32_t                           nb_indices{0};
-	uint32_t                           nb_vertices{0};
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;           // Device buffer of all 'Vertex'
-	std::unique_ptr<vkb::core::Buffer> index_buffer;            // Device buffer of the indices forming triangles
-	std::unique_ptr<vkb::core::Buffer> mat_color_buffer;        // Device buffer of array of 'Wavefront material'
-	std::unique_ptr<vkb::core::Buffer> mat_index_buffer;        // Device buffer of array of 'Wavefront material'
+	uint32_t                            nb_indices{0};
+	uint32_t                            nb_vertices{0};
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;           // Device buffer of all 'Vertex'
+	std::unique_ptr<vkb::core::BufferC> index_buffer;            // Device buffer of the indices forming triangles
+	std::unique_ptr<vkb::core::BufferC> mat_color_buffer;        // Device buffer of array of 'Wavefront material'
+	std::unique_ptr<vkb::core::BufferC> mat_index_buffer;        // Device buffer of array of 'Wavefront material'
 };
 
 class RaytracingReflection : public ApiVulkanSample
 {
 	struct AccelerationStructure
 	{
-		VkAccelerationStructureKHR         handle;
-		std::unique_ptr<vkb::core::Buffer> buffer;
+		VkAccelerationStructureKHR          handle;
+		std::unique_ptr<vkb::core::BufferC> buffer;
 	};
 
   public:
-	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  ray_tracing_pipeline_properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
-	VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR    ray_tracing_pipeline_properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR   acceleration_structure_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+	VkPhysicalDeviceAccelerationStructurePropertiesKHR acceleration_structure_properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
 
 	std::vector<AccelerationStructure> bottom_level_acceleration_structure;
 	AccelerationStructure              top_level_acceleration_structure;
@@ -75,9 +72,9 @@ class RaytracingReflection : public ApiVulkanSample
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shader_groups;        // Shader groups
 
 	// Shading Binding Table
-	std::unique_ptr<vkb::core::Buffer> raygen_shader_binding_table;
-	std::unique_ptr<vkb::core::Buffer> miss_shader_binding_table;
-	std::unique_ptr<vkb::core::Buffer> hit_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> raygen_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> miss_shader_binding_table;
+	std::unique_ptr<vkb::core::BufferC> hit_shader_binding_table;
 
 	struct StorageImage
 	{
@@ -94,7 +91,7 @@ class RaytracingReflection : public ApiVulkanSample
 		glm::mat4 view_inverse;
 		glm::mat4 proj_inverse;
 	} uniform_data;
-	std::unique_ptr<vkb::core::Buffer> ubo;
+	std::unique_ptr<vkb::core::BufferC> ubo;
 
 	struct ObjBuffers
 	{
@@ -103,7 +100,7 @@ class RaytracingReflection : public ApiVulkanSample
 		VkDeviceAddress materials;
 		VkDeviceAddress materialIndices;
 	} obj_buffers;
-	std::unique_ptr<vkb::core::Buffer> scene_desc;
+	std::unique_ptr<vkb::core::BufferC> scene_desc;
 
 	VkPipeline            pipeline{VK_NULL_HANDLE};
 	VkPipelineLayout      pipeline_layout{VK_NULL_HANDLE};
@@ -131,9 +128,14 @@ class RaytracingReflection : public ApiVulkanSample
 	void draw();
 
 	void build_command_buffers() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	bool prepare(const vkb::ApplicationOptions &options) override;
 	void render(float delta_time) override;
+
+  private:
+	// from vkb::VulkanSample
+	uint32_t get_api_version() const override;
+	void     request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_ray_tracing_reflection();
+std::unique_ptr<vkb::VulkanSampleC> create_ray_tracing_reflection();

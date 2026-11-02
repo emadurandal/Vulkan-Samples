@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2020, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,7 +25,7 @@ namespace vkb
 namespace
 {
 template <class T, class... A>
-T &request_resource(Device &device, ResourceRecord &recorder, std::mutex &resource_mutex, std::unordered_map<std::size_t, T> &resources, A &... args)
+T &request_resource(vkb::core::DeviceC &device, ResourceRecord &recorder, std::mutex &resource_mutex, std::unordered_map<std::size_t, T> &resources, A &...args)
 {
 	std::lock_guard<std::mutex> guard(resource_mutex);
 
@@ -35,7 +35,7 @@ T &request_resource(Device &device, ResourceRecord &recorder, std::mutex &resour
 }
 }        // namespace
 
-ResourceCache::ResourceCache(Device &device) :
+ResourceCache::ResourceCache(vkb::core::DeviceC &device) :
     device{device}
 {
 }
@@ -57,30 +57,30 @@ void ResourceCache::set_pipeline_cache(VkPipelineCache new_pipeline_cache)
 	pipeline_cache = new_pipeline_cache;
 }
 
-ShaderModule &ResourceCache::request_shader_module(VkShaderStageFlagBits stage, const ShaderSource &glsl_source, const ShaderVariant &shader_variant)
+vkb::core::ShaderModuleC &ResourceCache::request_shader_module(VkShaderStageFlagBits stage, const vkb::core::ShaderSource &glsl_source, const vkb::core::ShaderVariant &shader_variant)
 {
 	std::string entry_point{"main"};
 	return request_resource(device, recorder, shader_module_mutex, state.shader_modules, stage, glsl_source, entry_point, shader_variant);
 }
 
-PipelineLayout &ResourceCache::request_pipeline_layout(const std::vector<ShaderModule *> &shader_modules)
+PipelineLayout &ResourceCache::request_pipeline_layout(const std::vector<vkb::core::ShaderModuleC *> &shader_modules)
 {
 	return request_resource(device, recorder, pipeline_layout_mutex, state.pipeline_layouts, shader_modules);
 }
 
-DescriptorSetLayout &ResourceCache::request_descriptor_set_layout(const uint32_t                     set_index,
-                                                                  const std::vector<ShaderModule *> &shader_modules,
-                                                                  const std::vector<ShaderResource> &set_resources)
+DescriptorSetLayout &ResourceCache::request_descriptor_set_layout(const uint32_t                                 set_index,
+                                                                  const std::vector<vkb::core::ShaderModuleC *> &shader_modules,
+                                                                  const std::vector<vkb::core::ShaderResourceC> &set_resources)
 {
 	return request_resource(device, recorder, descriptor_set_layout_mutex, state.descriptor_set_layouts, set_index, shader_modules, set_resources);
 }
 
-GraphicsPipeline &ResourceCache::request_graphics_pipeline(PipelineState &pipeline_state)
+GraphicsPipeline &ResourceCache::request_graphics_pipeline(vkb::rendering::PipelineStateC &pipeline_state)
 {
 	return request_resource(device, recorder, graphics_pipeline_mutex, state.graphics_pipelines, pipeline_cache, pipeline_state);
 }
 
-ComputePipeline &ResourceCache::request_compute_pipeline(PipelineState &pipeline_state)
+ComputePipeline &ResourceCache::request_compute_pipeline(vkb::rendering::PipelineStateC &pipeline_state)
 {
 	return request_resource(device, recorder, compute_pipeline_mutex, state.compute_pipelines, pipeline_cache, pipeline_state);
 }
@@ -91,12 +91,12 @@ DescriptorSet &ResourceCache::request_descriptor_set(DescriptorSetLayout &descri
 	return request_resource(device, recorder, descriptor_set_mutex, state.descriptor_sets, descriptor_set_layout, descriptor_pool, buffer_infos, image_infos);
 }
 
-RenderPass &ResourceCache::request_render_pass(const std::vector<Attachment> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses)
+RenderPass &ResourceCache::request_render_pass(const std::vector<vkb::rendering::AttachmentC> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses)
 {
 	return request_resource(device, recorder, render_pass_mutex, state.render_passes, attachments, load_store_infos, subpasses);
 }
 
-Framebuffer &ResourceCache::request_framebuffer(const RenderTarget &render_target, const RenderPass &render_pass)
+Framebuffer &ResourceCache::request_framebuffer(const vkb::rendering::RenderTargetC &render_target, const RenderPass &render_pass)
 {
 	return request_resource(device, recorder, framebuffer_mutex, state.framebuffers, render_target, render_pass);
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Holochip Inc.
+/* Copyright (c) 2023-2025, Holochip Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -29,7 +29,7 @@ IosWindow::IosWindow(IosPlatform *platform, const Window::Properties &properties
 {
 }
 
-VkSurfaceKHR IosWindow::create_surface(Instance &instance)
+VkSurfaceKHR IosWindow::create_surface(vkb::core::InstanceC &instance)
 {
 	return create_surface(instance.get_handle(), VK_NULL_HANDLE);
 }
@@ -69,7 +69,12 @@ void IosWindow::close()
 
 float IosWindow::get_dpi_factor() const
 {
-    return [[UIScreen mainScreen] nativeScale] * (([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? 132 : 163);
+	return 1.0;
+}
+
+float IosWindow::get_content_scale_factor() const
+{
+	return [[UIScreen mainScreen] nativeScale];
 }
 
 std::vector<const char *> IosWindow::get_required_surface_extensions() const

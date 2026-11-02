@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Google
+/* Copyright (c) 2023-2026, Google
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -31,7 +31,8 @@ class OITLinkedLists : public ApiVulkanSample
 	bool resize(const uint32_t width, const uint32_t height) override;
 	void render(float delta_time) override;
 	void build_command_buffers() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 
   private:
@@ -86,13 +87,13 @@ class OITLinkedLists : public ApiVulkanSample
 	std::unique_ptr<vkb::sg::SubMesh> object;
 	Texture                           background_texture;
 
-	std::unique_ptr<vkb::core::Buffer> scene_constants;
-	std::unique_ptr<vkb::core::Buffer> instance_data;
+	std::unique_ptr<vkb::core::BufferC> scene_constants;
+	std::unique_ptr<vkb::core::BufferC> instance_data;
 
 	std::unique_ptr<vkb::core::Image>     linked_list_head_image;
 	std::unique_ptr<vkb::core::ImageView> linked_list_head_image_view;
-	std::unique_ptr<vkb::core::Buffer>    fragment_buffer;
-	std::unique_ptr<vkb::core::Buffer>    fragment_counter;
+	std::unique_ptr<vkb::core::BufferC>   fragment_buffer;
+	std::unique_ptr<vkb::core::BufferC>   fragment_counter;
 	glm::uint                             fragment_max_count = 0U;
 
 	VkRenderPass  gather_render_pass = VK_NULL_HANDLE;
@@ -102,10 +103,10 @@ class OITLinkedLists : public ApiVulkanSample
 	VkDescriptorPool      descriptor_pool       = VK_NULL_HANDLE;
 	VkDescriptorSet       descriptor_set        = VK_NULL_HANDLE;
 
-	VkPipelineLayout pipeline_layout;
-	VkPipeline       gather_pipeline;
-	VkPipeline       background_pipeline;
-	VkPipeline       combine_pipeline;
+	VkPipelineLayout pipeline_layout     = VK_NULL_HANDLE;
+	VkPipeline       gather_pipeline     = VK_NULL_HANDLE;
+	VkPipeline       background_pipeline = VK_NULL_HANDLE;
+	VkPipeline       combine_pipeline    = VK_NULL_HANDLE;
 
 	int32_t sort_fragments        = true;
 	int32_t camera_auto_rotation  = false;
@@ -113,4 +114,4 @@ class OITLinkedLists : public ApiVulkanSample
 	float   background_grayscale  = 0.3f;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_oit_linked_lists();
+std::unique_ptr<vkb::VulkanSampleC> create_oit_linked_lists();

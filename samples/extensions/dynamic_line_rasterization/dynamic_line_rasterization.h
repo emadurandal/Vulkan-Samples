@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,13 +22,13 @@
 class DynamicLineRasterization : public ApiVulkanSample
 {
   public:
-	DynamicLineRasterization();
 	virtual ~DynamicLineRasterization();
 
 	void render(float delta_time) override;
 	void build_command_buffers() override;
 	bool prepare(const vkb::ApplicationOptions &options) override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 	bool resize(const uint32_t width, const uint32_t height) override;
 
@@ -52,9 +52,9 @@ class DynamicLineRasterization : public ApiVulkanSample
 	VkPipelineLayout      pipeline_layout;
 	VkDescriptorPool      descriptor_pool;
 
-	std::unique_ptr<vkb::core::Buffer> camera_ubo;
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;
-	std::unique_ptr<vkb::core::Buffer> cube_index_buffer, edges_index_buffer;
+	std::unique_ptr<vkb::core::BufferC> camera_ubo;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC> cube_index_buffer, edges_index_buffer;
 
 	glm::vec4 fill_color, edge_color;
 
@@ -89,4 +89,4 @@ class DynamicLineRasterization : public ApiVulkanSample
 	static uint16_t array_to_uint16(const std::array<bool, 16> &array);
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_dynamic_line_rasterization();
+std::unique_ptr<vkb::VulkanSampleC> create_dynamic_line_rasterization();

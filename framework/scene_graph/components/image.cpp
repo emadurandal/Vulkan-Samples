@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2024, Arm Limited and Contributors
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,9 +17,8 @@
 
 #include "image.h"
 
+#include <cstddef>
 #include <mutex>
-
-#include "common/error.h"
 
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <stb_image_resize.h>
@@ -152,6 +151,7 @@ Image::Image(const std::string &name, std::vector<uint8_t> &&d, std::vector<Mipm
     format{VK_FORMAT_R8G8B8A8_UNORM},
     mipmaps{std::move(m)}
 {
+	update_hash();
 }
 
 std::type_index Image::get_type()
@@ -162,6 +162,11 @@ std::type_index Image::get_type()
 const std::vector<uint8_t> &Image::get_data() const
 {
 	return data;
+}
+
+size_t Image::get_data_hash() const
+{
+	return data_hash;
 }
 
 void Image::clear_data()
@@ -196,7 +201,7 @@ const std::vector<std::vector<VkDeviceSize>> &Image::get_offsets() const
 	return offsets;
 }
 
-void Image::create_vk_image(Device &device, VkImageViewType image_view_type, VkImageCreateFlags flags)
+void Image::create_vk_image(vkb::core::DeviceC &device, VkImageViewType image_view_type, VkImageCreateFlags flags)
 {
 	assert(!vk_image && !vk_image_view && "Vulkan image already constructed");
 
@@ -312,10 +317,21 @@ std::vector<uint8_t> &Image::get_mut_data()
 	return data;
 }
 
+void Image::update_hash()
+{
+	data_hash = vkb::calculate_hash(data);
+}
+
+void Image::update_hash(size_t hash)
+{
+	data_hash = hash;
+}
+
 void Image::set_data(const uint8_t *raw_data, size_t size)
 {
 	assert(data.empty() && "Image data already set");
 	data = {raw_data, raw_data + size};
+	update_hash();
 }
 
 void Image::set_format(const VkFormat f)

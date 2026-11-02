@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,10 +16,8 @@
  */
 
 #include "hpp_swapchain_images.h"
-
-#include <common/hpp_utils.h>
-#include <hpp_gui.h>
-#include <rendering/subpasses/hpp_forward_subpass.h>
+#include "common/hpp_utils.h"
+#include "rendering/subpasses/forward_subpass.h"
 
 HPPSwapchainImages::HPPSwapchainImages()
 {
@@ -31,7 +29,7 @@ HPPSwapchainImages::HPPSwapchainImages()
 
 bool HPPSwapchainImages::prepare(const vkb::ApplicationOptions &options)
 {
-	if (!VulkanSample<vkb::BindingType::Cpp>::prepare(options))
+	if (!vkb::VulkanSampleCpp::prepare(options))
 	{
 		return false;
 	}
@@ -41,12 +39,12 @@ bool HPPSwapchainImages::prepare(const vkb::ApplicationOptions &options)
 	auto &camera_node = vkb::common::add_free_camera(get_scene(), "main_camera", get_render_context().get_surface_extent());
 	camera            = &camera_node.get_component<vkb::sg::Camera>();
 
-	vkb::ShaderSource vert_shader("base.vert");
-	vkb::ShaderSource frag_shader("base.frag");
-	auto              scene_subpass = std::make_unique<vkb::rendering::subpasses::HPPForwardSubpass>(
+	vkb::core::ShaderSource vert_shader("base.vert.spv");
+	vkb::core::ShaderSource frag_shader("base.frag.spv");
+	auto                    scene_subpass = std::make_unique<vkb::rendering::subpasses::ForwardSubpassCpp>(
         get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
-	auto render_pipeline = std::make_unique<vkb::rendering::HPPRenderPipeline>();
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineCpp>();
 	render_pipeline->add_subpass(std::move(scene_subpass));
 
 	set_render_pipeline(std::move(render_pipeline));
@@ -70,7 +68,7 @@ void HPPSwapchainImages::update(float delta_time)
 		last_swapchain_image_count = swapchain_image_count;
 	}
 
-	VulkanSample<vkb::BindingType::Cpp>::update(delta_time);
+	vkb::VulkanSampleCpp::update(delta_time);
 }
 
 void HPPSwapchainImages::draw_gui()

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Sascha Willems
+/* Copyright (c) 2023-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -34,20 +34,20 @@ class DescriptorBufferBasic : public ApiVulkanSample
 
 	struct DescriptorData
 	{
-		VkDescriptorSetLayout              layout{VK_NULL_HANDLE};
-		std::unique_ptr<vkb::core::Buffer> buffer;
-		VkDeviceSize                       size;
-		VkDeviceSize                       offset;
+		VkDescriptorSetLayout               layout{VK_NULL_HANDLE};
+		std::unique_ptr<vkb::core::BufferC> buffer;
+		VkDeviceSize                        size;
+		VkDeviceSize                        offset;
 	};
 	DescriptorData uniform_binding_descriptor;
 	DescriptorData image_binding_descriptor;
 
 	struct Cube
 	{
-		Texture                            texture;
-		std::unique_ptr<vkb::core::Buffer> uniform_buffer;
-		glm::vec3                          rotation;
-		glm::mat4                          model_mat;
+		Texture                             texture;
+		std::unique_ptr<vkb::core::BufferC> uniform_buffer;
+		glm::vec3                           rotation;
+		glm::mat4                           model_mat;
 	};
 	std::array<Cube, 2> cubes;
 
@@ -58,7 +58,7 @@ class DescriptorBufferBasic : public ApiVulkanSample
 
 	struct UniformBuffers
 	{
-		std::unique_ptr<vkb::core::Buffer> scene;
+		std::unique_ptr<vkb::core::BufferC> scene;
 	} uniform_buffers;
 
 	struct UboScene
@@ -72,7 +72,8 @@ class DescriptorBufferBasic : public ApiVulkanSample
 
 	DescriptorBufferBasic();
 	~DescriptorBufferBasic() override;
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         load_assets();
 	void         setup_descriptor_set_layout();
@@ -87,4 +88,4 @@ class DescriptorBufferBasic : public ApiVulkanSample
 	void         on_update_ui_overlay(vkb::Drawer &drawer) override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_descriptor_buffer_basic();
+std::unique_ptr<vkb::VulkanSampleC> create_descriptor_buffer_basic();

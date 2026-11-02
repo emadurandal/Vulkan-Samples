@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -47,7 +47,7 @@ class FragmentShaderBarycentric : public ApiVulkanSample
 	std::unique_ptr<vkb::sg::SubMesh> skybox;
 	std::unique_ptr<vkb::sg::SubMesh> object;
 
-	std::unique_ptr<vkb::core::Buffer> ubo;
+	std::unique_ptr<vkb::core::BufferC> ubo;
 
 	struct
 	{
@@ -71,7 +71,8 @@ class FragmentShaderBarycentric : public ApiVulkanSample
 
 	void render(float delta_time) override;
 	void build_command_buffers() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 
   private:
@@ -85,4 +86,4 @@ class FragmentShaderBarycentric : public ApiVulkanSample
 	void draw();
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_fragment_shader_barycentric();
+std::unique_ptr<vkb::VulkanSampleC> create_fragment_shader_barycentric();

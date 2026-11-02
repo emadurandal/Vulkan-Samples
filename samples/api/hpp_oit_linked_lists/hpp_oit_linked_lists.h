@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, NVIDIA
+/* Copyright (c) 2023-2026, NVIDIA
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -31,7 +31,8 @@ class HPPOITLinkedLists : public HPPApiVulkanSample
 	bool resize(const uint32_t width, const uint32_t height) override;
 
 	// from vkb::VulkanSample
-	void request_gpu_features(vkb::core::HPPPhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceCpp &gpu) override;
 
 	// from HPPApiVulkanSample
 	void build_command_buffers() override;
@@ -90,26 +91,26 @@ class HPPOITLinkedLists : public HPPApiVulkanSample
 	std::unique_ptr<vkb::scene_graph::components::HPPSubMesh> object;
 	HPPTexture                                                background_texture;
 
-	std::unique_ptr<vkb::core::HPPBuffer> scene_constants;
-	std::unique_ptr<vkb::core::HPPBuffer> instance_data;
+	std::unique_ptr<vkb::core::BufferCpp> scene_constants;
+	std::unique_ptr<vkb::core::BufferCpp> instance_data;
 
 	std::unique_ptr<vkb::core::HPPImage>     linked_list_head_image;
 	std::unique_ptr<vkb::core::HPPImageView> linked_list_head_image_view;
-	std::unique_ptr<vkb::core::HPPBuffer>    fragment_buffer;
-	std::unique_ptr<vkb::core::HPPBuffer>    fragment_counter;
+	std::unique_ptr<vkb::core::BufferCpp>    fragment_buffer;
+	std::unique_ptr<vkb::core::BufferCpp>    fragment_counter;
 	glm::uint                                fragment_max_count = 0U;
 
 	vk::RenderPass  gather_render_pass = nullptr;
-	vk::Framebuffer gather_framebuffer;
+	vk::Framebuffer gather_framebuffer = nullptr;
 
 	vk::DescriptorSetLayout descriptor_set_layout = nullptr;
 	vk::DescriptorPool      descriptor_pool       = nullptr;
 	vk::DescriptorSet       descriptor_set        = nullptr;
 
-	vk::PipelineLayout pipeline_layout = nullptr;
-	vk::Pipeline       gather_pipeline;
-	vk::Pipeline       background_pipeline;
-	vk::Pipeline       combine_pipeline;
+	vk::PipelineLayout pipeline_layout     = nullptr;
+	vk::Pipeline       gather_pipeline     = nullptr;
+	vk::Pipeline       background_pipeline = nullptr;
+	vk::Pipeline       combine_pipeline    = nullptr;
 
 	bool    sort_fragments        = true;
 	bool    camera_auto_rotation  = false;

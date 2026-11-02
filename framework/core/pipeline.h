@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,12 +23,10 @@
 
 namespace vkb
 {
-class Device;
-
 class Pipeline
 {
   public:
-	Pipeline(Device &device);
+	Pipeline(vkb::core::DeviceC &device);
 
 	Pipeline(const Pipeline &) = delete;
 
@@ -42,14 +40,14 @@ class Pipeline
 
 	VkPipeline get_handle() const;
 
-	const PipelineState &get_state() const;
+	const vkb::rendering::PipelineStateC &get_state() const;
 
   protected:
-	Device &device;
+	vkb::core::DeviceC &device;
 
 	VkPipeline handle = VK_NULL_HANDLE;
 
-	PipelineState state;
+	vkb::rendering::PipelineStateC state;
 };
 
 class ComputePipeline : public Pipeline
@@ -59,9 +57,9 @@ class ComputePipeline : public Pipeline
 
 	virtual ~ComputePipeline() = default;
 
-	ComputePipeline(Device &        device,
-	                VkPipelineCache pipeline_cache,
-	                PipelineState & pipeline_state);
+	ComputePipeline(vkb::core::DeviceC             &device,
+	                VkPipelineCache                 pipeline_cache,
+	                vkb::rendering::PipelineStateC &pipeline_state);
 };
 
 class GraphicsPipeline : public Pipeline
@@ -71,8 +69,8 @@ class GraphicsPipeline : public Pipeline
 
 	virtual ~GraphicsPipeline() = default;
 
-	GraphicsPipeline(Device &        device,
-	                 VkPipelineCache pipeline_cache,
-	                 PipelineState & pipeline_state);
+	GraphicsPipeline(vkb::core::DeviceC             &device,
+	                 VkPipelineCache                 pipeline_cache,
+	                 vkb::rendering::PipelineStateC &pipeline_state);
 };
 }        // namespace vkb

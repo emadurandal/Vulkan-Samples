@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Google
+/* Copyright (c) 2023-2026, Google
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,6 +20,7 @@
 
 OITLinkedLists::OITLinkedLists()
 {
+	title = "OIT linked lists";
 }
 
 OITLinkedLists::~OITLinkedLists()
@@ -105,7 +106,14 @@ void OITLinkedLists::render(float delta_time)
 	update_scene_constants();
 }
 
-void OITLinkedLists::request_gpu_features(vkb::PhysicalDevice &gpu)
+void OITLinkedLists::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void OITLinkedLists::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	if (gpu.get_features().fragmentStoresAndAtomics)
 	{
@@ -115,6 +123,8 @@ void OITLinkedLists::request_gpu_features(vkb::PhysicalDevice &gpu)
 	{
 		throw std::runtime_error("This sample requires support for buffers and images stores and atomic operations in the fragment shader stage");
 	}
+
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceSynchronization2FeaturesKHR, synchronization2);
 }
 
 void OITLinkedLists::on_update_ui_overlay(vkb::Drawer &drawer)
@@ -161,13 +171,20 @@ void OITLinkedLists::build_command_buffers()
 				vkCmdEndRenderPass(draw_cmd_buffers[i]);
 			}
 
-			VkImageSubresourceRange subresource_range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-			vkb::image_layout_transition(
-			    draw_cmd_buffers[i], linked_list_head_image->get_handle(),
-			    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-			    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
-			    subresource_range);
+			// Insert a pipeline barrier to ensure that all writes to the fragment buffer performed in the gather pass are made available before reading from it in the combine pass
+			VkBufferMemoryBarrier2 buffer_barrier{.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+			                                      .pNext               = nullptr,
+			                                      .srcStageMask        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+			                                      .srcAccessMask       = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+			                                      .dstStageMask        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+			                                      .dstAccessMask       = VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+			                                      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			                                      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			                                      .buffer              = fragment_buffer->get_handle(),
+			                                      .offset              = 0,
+			                                      .size                = VK_WHOLE_SIZE};
+			VkDependencyInfo       dependency_info{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &buffer_barrier};
+			vkCmdPipelineBarrier2KHR(draw_cmd_buffers[i], &dependency_info);
 
 			// Combine pass
 			{
@@ -252,17 +269,22 @@ void OITLinkedLists::create_fragment_resources(const uint32_t width, const uint3
 	{
 		const VkExtent3D image_extent = {width, height, 1};
 		linked_list_head_image        = std::make_unique<vkb::core::Image>(get_device(), image_extent, VK_FORMAT_R32_UINT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY, VK_SAMPLE_COUNT_1_BIT);
-		linked_list_head_image_view   = std::make_unique<vkb::core::ImageView>(*linked_list_head_image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT);
+		linked_list_head_image->set_debug_name("linked_list_head_image");
+
+		linked_list_head_image_view = std::make_unique<vkb::core::ImageView>(*linked_list_head_image, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT);
+		linked_list_head_image_view->set_debug_name("linked_list_head_image_view");
 	}
 
 	{
 		fragment_max_count                  = width * height * kFragmentsPerPixelAverage;
 		const uint32_t fragment_buffer_size = sizeof(glm::uvec3) * fragment_max_count;
-		fragment_buffer                     = std::make_unique<vkb::core::Buffer>(get_device(), fragment_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+		fragment_buffer                     = std::make_unique<vkb::core::BufferC>(get_device(), fragment_buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+		fragment_buffer->set_debug_name("fragment_buffer");
 	}
 
 	{
-		fragment_counter = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(glm::uint), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+		fragment_counter = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(glm::uint), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+		fragment_counter->set_debug_name("fragment_counter");
 	}
 }
 
@@ -315,8 +337,8 @@ void OITLinkedLists::load_assets()
 
 void OITLinkedLists::create_constant_buffers()
 {
-	scene_constants = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(SceneConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	instance_data   = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(Instance) * kInstanceCount, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	scene_constants = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(SceneConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	instance_data   = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(Instance) * kInstanceCount, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 void OITLinkedLists::create_descriptors()
@@ -422,8 +444,8 @@ void OITLinkedLists::create_pipelines()
 			vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
 			vertex_input_state.pVertexAttributeDescriptions    = vertex_input_attributes.data();
 
-			shader_stages[0] = load_shader("oit_linked_lists/gather.vert", VK_SHADER_STAGE_VERTEX_BIT);
-			shader_stages[1] = load_shader("oit_linked_lists/gather.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+			shader_stages[0] = load_shader("oit_linked_lists/gather.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+			shader_stages[1] = load_shader("oit_linked_lists/gather.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			pipeline_create_info.renderPass = gather_render_pass;
 
@@ -436,8 +458,8 @@ void OITLinkedLists::create_pipelines()
 			vertex_input_state.vertexAttributeDescriptionCount = 0;
 			vertex_input_state.pVertexAttributeDescriptions    = nullptr;
 
-			shader_stages[0] = load_shader("oit_linked_lists/fullscreen.vert", VK_SHADER_STAGE_VERTEX_BIT);
-			shader_stages[1] = load_shader("oit_linked_lists/background.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+			shader_stages[0] = load_shader("oit_linked_lists/fullscreen.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+			shader_stages[1] = load_shader("oit_linked_lists/background.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			pipeline_create_info.renderPass = render_pass;
 
@@ -455,11 +477,11 @@ void OITLinkedLists::create_pipelines()
 			blend_attachment_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			blend_attachment_state.colorBlendOp        = VK_BLEND_OP_ADD;
 			blend_attachment_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-			blend_attachment_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			blend_attachment_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			blend_attachment_state.alphaBlendOp        = VK_BLEND_OP_ADD;
 
-			shader_stages[0] = load_shader("oit_linked_lists/combine.vert", VK_SHADER_STAGE_VERTEX_BIT);
-			shader_stages[1] = load_shader("oit_linked_lists/combine.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+			shader_stages[0] = load_shader("oit_linked_lists/combine.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+			shader_stages[1] = load_shader("oit_linked_lists/combine.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			pipeline_create_info.renderPass = render_pass;
 
@@ -518,7 +540,7 @@ void OITLinkedLists::fill_instance_data()
 
 ////////////////////////////////////////////////////////////////////////////////
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_oit_linked_lists()
+std::unique_ptr<vkb::VulkanSampleC> create_oit_linked_lists()
 {
 	return std::make_unique<OITLinkedLists>();
 }

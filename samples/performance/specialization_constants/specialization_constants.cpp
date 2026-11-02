@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -34,9 +34,12 @@ SpecializationConstants::SpecializationConstants()
 	config.insert<vkb::IntSetting>(1, specialization_constants_enabled, 1);
 }
 
-SpecializationConstants::ForwardSubpassCustomLights::ForwardSubpassCustomLights(vkb::RenderContext &render_context,
-                                                                                vkb::ShaderSource &&vertex_shader, vkb::ShaderSource &&fragment_shader, vkb::sg::Scene &scene_, vkb::sg::Camera &camera) :
-    vkb::ForwardSubpass{render_context, std::move(vertex_shader), std::move(fragment_shader), scene_, camera}
+SpecializationConstants::ForwardSubpassCustomLights::ForwardSubpassCustomLights(vkb::rendering::RenderContextC &render_context,
+                                                                                vkb::core::ShaderSource       &&vertex_shader,
+                                                                                vkb::core::ShaderSource       &&fragment_shader,
+                                                                                vkb::scene_graph::SceneC       &scene_,
+                                                                                vkb::sg::Camera                &camera) :
+    vkb::rendering::subpasses::ForwardSubpassC{render_context, std::move(vertex_shader), std::move(fragment_shader), scene_, camera}
 {
 }
 
@@ -64,24 +67,19 @@ bool SpecializationConstants::prepare(const vkb::ApplicationOptions &options)
 
 void SpecializationConstants::ForwardSubpassCustomLights::prepare()
 {
-	auto &device = render_context.get_device();
-	for (auto &mesh : meshes)
+	auto &device = get_render_context().get_device();
+	for (auto &mesh : get_meshes())
 	{
 		for (auto &sub_mesh : mesh->get_submeshes())
 		{
-			auto &variant = sub_mesh->get_mut_shader_variant();
-
-			// Same as Geometry except adds lighting definitions to sub mesh variants.
-			variant.add_definitions({"MAX_LIGHT_COUNT " + std::to_string(LIGHT_COUNT)});
-			variant.add_definitions(vkb::light_type_definitions);
-
+			auto &variant     = sub_mesh->get_mut_shader_variant();
 			auto &vert_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_VERTEX_BIT, get_vertex_shader(), variant);
 			auto &frag_module = device.get_resource_cache().request_shader_module(VK_SHADER_STAGE_FRAGMENT_BIT, get_fragment_shader(), variant);
 		}
 	}
 }
 
-void SpecializationConstants::render(vkb::CommandBuffer &command_buffer)
+void SpecializationConstants::render(vkb::core::CommandBufferC &command_buffer)
 {
 	// POI
 	//
@@ -102,47 +100,47 @@ void SpecializationConstants::render(vkb::CommandBuffer &command_buffer)
 	}
 }
 
-std::unique_ptr<vkb::RenderPipeline> SpecializationConstants::create_specialization_renderpass()
+std::unique_ptr<vkb::rendering::RenderPipelineC> SpecializationConstants::create_specialization_renderpass()
 {
 	// Scene subpass
-	vkb::ShaderSource vert_shader{"base.vert"};
-	vkb::ShaderSource frag_shader{"specialization_constants/specialization_constants.frag"};
-	auto              scene_subpass =
+	vkb::core::ShaderSource vert_shader{"base.vert.spv"};
+	vkb::core::ShaderSource frag_shader{"specialization_constants/specialization_constants.frag.spv"};
+	auto                    scene_subpass =
 	    std::make_unique<ForwardSubpassCustomLights>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
 	// Create specialization constants pipeline
-	std::vector<std::unique_ptr<vkb::Subpass>> scene_subpasses{};
+	std::vector<std::unique_ptr<vkb::rendering::SubpassC>> scene_subpasses{};
 	scene_subpasses.push_back(std::move(scene_subpass));
 
-	auto specialization_constants_pipeline = std::make_unique<vkb::RenderPipeline>(std::move(scene_subpasses));
+	auto specialization_constants_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>(std::move(scene_subpasses));
 
 	return specialization_constants_pipeline;
 }
 
-std::unique_ptr<vkb::RenderPipeline> SpecializationConstants::create_standard_renderpass()
+std::unique_ptr<vkb::rendering::RenderPipelineC> SpecializationConstants::create_standard_renderpass()
 {
 	// Scene subpass
-	vkb::ShaderSource vert_shader{"base.vert"};
-	vkb::ShaderSource frag_shader{"specialization_constants/UBOs.frag"};
-	auto              scene_subpass =
+	vkb::core::ShaderSource vert_shader{"base.vert.spv"};
+	vkb::core::ShaderSource frag_shader{"specialization_constants/UBOs.frag.spv"};
+	auto                    scene_subpass =
 	    std::make_unique<ForwardSubpassCustomLights>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
 	// Create base pipeline
-	std::vector<std::unique_ptr<vkb::Subpass>> scene_subpasses{};
+	std::vector<std::unique_ptr<vkb::rendering::SubpassC>> scene_subpasses{};
 	scene_subpasses.push_back(std::move(scene_subpass));
 
-	auto standard_pipeline = std::make_unique<vkb::RenderPipeline>(std::move(scene_subpasses));
+	auto standard_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>(std::move(scene_subpasses));
 
 	return standard_pipeline;
 }
 
-void SpecializationConstants::ForwardSubpassCustomLights::draw(vkb::CommandBuffer &command_buffer)
+void SpecializationConstants::ForwardSubpassCustomLights::draw(vkb::core::CommandBufferC &command_buffer)
 {
 	// Override forward light subpass draw function to provide a custom number of lights
-	auto lights_buffer = allocate_custom_lights<CustomForwardLights>(command_buffer, scene.get_components<vkb::sg::Light>(), LIGHT_COUNT);
+	auto lights_buffer = allocate_custom_lights<CustomForwardLights>(command_buffer, get_scene().get_components<vkb::sg::Light>(), LIGHT_COUNT);
 	command_buffer.bind_buffer(lights_buffer.get_buffer(), lights_buffer.get_offset(), lights_buffer.get_size(), 0, 4, 0);
 
-	vkb::GeometrySubpass::draw(command_buffer);
+	vkb::rendering::subpasses::GeometrySubpassC::draw(command_buffer);
 }
 
 void SpecializationConstants::draw_gui()
@@ -162,7 +160,7 @@ void SpecializationConstants::draw_gui()
 	    /* lines = */ lines);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_specialization_constants()
+std::unique_ptr<vkb::VulkanSampleC> create_specialization_constants()
 {
 	return std::make_unique<SpecializationConstants>();
 }

@@ -1,4 +1,5 @@
-# Copyright (c) 2019-2024, Arm Limited and Contributors
+# Copyright (c) 2019-2026, Arm Limited and Contributors
+# Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -23,7 +24,6 @@ set(FRAMEWORK_FILES
     # Header Files
     gui.h
     drawer.h
-    glsl_compiler.h
     spirv_reflection.h
     gltf_loader.h
     buffer_pool.h
@@ -39,25 +39,21 @@ set(FRAMEWORK_FILES
     api_vulkan_sample.h
     timer.h
     camera.h
+    builder_base.h
+    vulkan_type_mapping.h
     hpp_api_vulkan_sample.h
-    hpp_buffer_pool.h
     hpp_fence_pool.h
-    hpp_glsl_compiler.h
     hpp_gltf_loader.h
-    hpp_gui.h
     hpp_resource_binding_state.h
     hpp_resource_cache.h
     hpp_resource_record.h
     hpp_resource_replay.h
     hpp_semaphore_pool.h
+    structure_chain_builder.h
     # Source Files
-    gui.cpp
     drawer.cpp
-    glsl_compiler.cpp
-    spirv_reflection.cpp
     gltf_loader.cpp
     debug_info.cpp
-    buffer_pool.cpp
     fence_pool.cpp
     heightmap.cpp
     semaphore_pool.cpp
@@ -69,7 +65,6 @@ set(FRAMEWORK_FILES
     timer.cpp
     camera_core.cpp
     hpp_api_vulkan_sample.cpp
-    hpp_gui.cpp
     hpp_resource_cache.cpp)
 
 set(COMMON_FILES
@@ -80,17 +75,16 @@ set(COMMON_FILES
     common/glm_common.h
     common/resource_caching.h
     common/helpers.h
-    common/error.h
     common/utils.h
     common/strings.h
     common/tags.h
-    common/hpp_error.h
     common/hpp_resource_caching.h
     common/hpp_strings.h
     common/hpp_utils.h
     common/hpp_vk_common.h
+    common/macros.h
+    common/vulkan_exception.h
     # Source Files
-    common/error.cpp
     common/ktx_common.cpp
     common/vk_common.cpp
     common/utils.cpp
@@ -108,43 +102,23 @@ set(RENDERING_FILES
     rendering/postprocessing_pipeline.h
     rendering/postprocessing_pass.h
     rendering/postprocessing_renderpass.h
-    rendering/postprocessing_computepass.h
     rendering/render_context.h
     rendering/render_frame.h
     rendering/render_pipeline.h
     rendering/render_target.h
     rendering/subpass.h
-    rendering/hpp_pipeline_state.h
-    rendering/hpp_render_context.h
-    rendering/hpp_render_frame.h
-    rendering/hpp_render_pipeline.h
-    rendering/hpp_render_target.h
-    rendering/hpp_subpass.h
     # Source files
-    rendering/pipeline_state.cpp
     rendering/postprocessing_pipeline.cpp
     rendering/postprocessing_pass.cpp
-    rendering/postprocessing_renderpass.cpp
-    rendering/postprocessing_computepass.cpp
-    rendering/render_context.cpp
-    rendering/render_frame.cpp
-    rendering/render_pipeline.cpp
-    rendering/render_target.cpp
-    rendering/subpass.cpp
-    rendering/hpp_render_context.cpp
-    rendering/hpp_render_frame.cpp
-    rendering/hpp_render_target.cpp)
+    rendering/postprocessing_renderpass.cpp)
 
 set(RENDERING_SUBPASSES_FILES
     # Header files
     rendering/subpasses/forward_subpass.h
     rendering/subpasses/lighting_subpass.h
     rendering/subpasses/geometry_subpass.h
-    rendering/subpasses/hpp_forward_subpass.h
     # Source files
-    rendering/subpasses/forward_subpass.cpp
-    rendering/subpasses/lighting_subpass.cpp
-    rendering/subpasses/geometry_subpass.cpp)
+    rendering/subpasses/lighting_subpass.cpp)
 
 set(SCENE_GRAPH_FILES
     # Header Files
@@ -154,8 +128,6 @@ set(SCENE_GRAPH_FILES
     scene_graph/script.h
     # Source Files
     scene_graph/component.cpp
-    scene_graph/node.cpp
-    scene_graph/scene.cpp
     scene_graph/script.cpp)
 
 set(SCENE_GRAPH_COMPONENT_FILES
@@ -177,7 +149,10 @@ set(SCENE_GRAPH_COMPONENT_FILES
     scene_graph/components/image/ktx.h
     scene_graph/components/image/stb.h
     scene_graph/components/hpp_image.h
+    scene_graph/components/hpp_material.h
+    scene_graph/components/hpp_mesh.h
     scene_graph/components/hpp_sub_mesh.h
+    scene_graph/components/hpp_texture.h
     # Source Files
     scene_graph/components/aabb.cpp
     scene_graph/components/camera.cpp
@@ -188,7 +163,6 @@ set(SCENE_GRAPH_COMPONENT_FILES
     scene_graph/components/material.cpp
     scene_graph/components/mesh.cpp
     scene_graph/components/pbr_material.cpp
-    scene_graph/components/sampler.cpp
     scene_graph/components/sub_mesh.cpp
     scene_graph/components/texture.cpp
     scene_graph/components/transform.cpp
@@ -214,10 +188,8 @@ set(STATS_FILES
     stats/stats_provider.h
     stats/frame_time_stats_provider.h
     stats/vulkan_stats_provider.h
-    stats/hpp_stats.h
 
     # Source Files
-    stats/stats.cpp
     stats/stats_provider.cpp
     stats/frame_time_stats_provider.cpp
     stats/vulkan_stats_provider.cpp)
@@ -236,6 +208,7 @@ set(CORE_FILES
     core/descriptor_set.h
     core/queue.h
     core/command_pool.h
+    core/command_pool_base.h
     core/swapchain.h
     core/command_buffer.h
     core/allocated.h
@@ -243,71 +216,49 @@ set(CORE_FILES
     core/image.h
     core/image_view.h
     core/sampled_image.h
-    core/instance.h
     core/sampler.h
     core/framebuffer.h
     core/render_pass.h
     core/query_pool.h
     core/acceleration_structure.h
-    core/hpp_allocated.h
-    core/hpp_buffer.h
-    core/hpp_command_buffer.h
-    core/hpp_command_pool.h
     core/hpp_debug.h
     core/hpp_descriptor_pool.h
     core/hpp_descriptor_set.h
     core/hpp_descriptor_set_layout.h
-    core/hpp_device.h
     core/hpp_framebuffer.h
     core/hpp_image.h
     core/hpp_image_view.h
-    core/hpp_instance.h
-    core/hpp_physical_device.h
     core/hpp_pipeline.h
     core/hpp_pipeline_layout.h
     core/hpp_query_pool.h
     core/hpp_queue.h
 	core/hpp_render_pass.h
     core/hpp_sampler.h
-    core/hpp_shader_module.h
     core/hpp_swapchain.h
     core/vulkan_resource.h
     # Source Files
-    core/instance.cpp
-    core/physical_device.cpp
-    core/device.cpp
+    core/command_pool_base.cpp
     core/debug.cpp
     core/image_core.cpp
-    core/shader_module.cpp
     core/pipeline_layout.cpp
     core/pipeline.cpp
     core/descriptor_set_layout.cpp
     core/descriptor_pool.cpp
     core/descriptor_set.cpp
     core/queue.cpp
-    core/command_pool.cpp
     core/swapchain.cpp
-    core/command_buffer.cpp
     core/allocated.cpp
-    core/buffer.cpp
     core/image_core.cpp
     core/image_view.cpp
     core/sampled_image.cpp
-    core/instance.cpp
     core/sampler_core.cpp
     core/framebuffer.cpp
     core/render_pass.cpp
     core/query_pool.cpp
     core/acceleration_structure.cpp
-    core/hpp_buffer.cpp
-    core/hpp_command_buffer.cpp
-    core/hpp_command_pool.cpp
     core/hpp_debug.cpp
-    core/hpp_device.cpp
     core/hpp_image_core.cpp
     core/hpp_image_view.cpp
-    core/hpp_instance.cpp
-    core/hpp_physical_device.cpp
     core/hpp_pipeline_layout.cpp
     core/hpp_queue.cpp
     core/hpp_sampler.cpp
@@ -321,7 +272,6 @@ set(PLATFORM_FILES
     platform/window.h
     platform/input_events.h
     platform/configuration.h
-    platform/parser.h
     platform/headless_window.h
     platform/plugins/plugin.h
     platform/plugins/plugin_base.h
@@ -333,7 +283,6 @@ set(PLATFORM_FILES
     platform/window.cpp
     platform/input_events.cpp
     platform/configuration.cpp
-    platform/parser.cpp
     platform/plugins/plugin.cpp)
 
 set(GLFW_FILES
@@ -341,15 +290,6 @@ set(GLFW_FILES
     platform/glfw_window.h
     # Source Files
     platform/glfw_window.cpp
-)
-
-set(PARSER_FILES
-    # Header Files
-    platform/parsers/CLI11.h
-    platform/parsers/help_formatter.h
-    # Source Files
-    platform/parsers/CLI11.cpp
-    platform/parsers/help_formatter.cpp
 )
 
 set(ANDROID_FILES
@@ -394,7 +334,6 @@ source_group("\\" FILES ${FRAMEWORK_FILES})
 source_group("common\\" FILES ${COMMON_FILES})
 source_group("platform\\" FILES ${PLATFORM_FILES})
 source_group("platform\\" FILES ${GLFW_FILES})
-source_group("platform\\parsers" FILES ${PARSER_FILES})
 source_group("platform\\windows" FILES ${WINDOWS_FILES})
 source_group("platform\\android" FILES ${ANDROID_FILES})
 source_group("platform\\ios" FILES ${IOS_FILES})
@@ -411,7 +350,6 @@ source_group("stats\\" FILES ${STATS_FILES})
 
 set(PROJECT_FILES
     ${PLATFORM_FILES}
-    ${PARSER_FILES}
     ${COMMON_FILES}
     ${FRAMEWORK_FILES}
     ${CORE_FILES}
@@ -455,12 +393,12 @@ else()
 endif()
 
 # mask out the min/max macros from minwindef.h
-if(MSVC)
+if(WIN32)
     add_definitions(-DNOMINMAX)
 endif()
 
 #NB: switch this to shared library and things stop working. (there is likely two copies of volk somewhere.
-add_library(${PROJECT_NAME} OBJECT ${PROJECT_FILES})
+add_library(${PROJECT_NAME} STATIC ${PROJECT_FILES})
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # compiler flags based on compiler type
@@ -501,7 +439,7 @@ if(${VKB_VULKAN_DEBUG})
 endif()
 
 if(${VKB_ENABLE_PORTABILITY})
-    message(STATUS "Vulkan Portability extension is enabled")
+    message(STATUS "Vulkan Portability Enumeration and Portability Subset extensions are enabled")
     target_compile_definitions(${PROJECT_NAME} PUBLIC VKB_ENABLE_PORTABILITY)
 endif()
 
@@ -527,14 +465,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     imgui
     tinygltf
     glm
-    glslang
-    SPIRV
     vma
     spirv-cross-glsl
-    glslang-default-resource-limits
     spdlog
-    ctpl
-    CLI11::CLI11
     plugins)
 
 if(${NEED_LINK_ATOMIC})
@@ -558,4 +491,12 @@ endif()
 
 if(VKB_DO_CLANG_TIDY)
     set_target_properties(framework PROPERTIES CXX_CLANG_TIDY "${VKB_DO_CLANG_TIDY}")
+endif()
+
+if (VKB_PROFILING)
+    ## Enable profling
+    target_compile_definitions(${PROJECT_NAME} PUBLIC VKB_PROFILING=1)
+else()
+    ## Disable profiling
+    target_compile_definitions(${PROJECT_NAME} PUBLIC VKB_PROFILING=0)
 endif()

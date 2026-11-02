@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,8 +17,12 @@
 
 #pragma once
 
+#include "common/hpp_vk_common.h"
+#include "core/hpp_descriptor_set.h"
+#include "core/hpp_image_view.h"
+#include "core/hpp_render_pass.h"
+#include "hpp_resource_record.h"
 #include "resource_caching.h"
-#include <core/hpp_device.h>
 #include <vulkan/vulkan_hash.hpp>
 
 namespace std
@@ -106,7 +110,8 @@ struct hash<vkb::core::HPPDescriptorSetLayout>
 {
 	size_t operator()(const vkb::core::HPPDescriptorSetLayout &descriptor_set_layout) const
 	{
-		return std::hash<vkb::DescriptorSetLayout>()(reinterpret_cast<vkb::DescriptorSetLayout const &>(descriptor_set_layout));
+		return std::hash<vkb::DescriptorSetLayout>()(
+		    reinterpret_cast<vkb::DescriptorSetLayout const &>(descriptor_set_layout));
 	}
 };
 
@@ -134,7 +139,7 @@ struct hash<vkb::core::HPPImageView>
 {
 	size_t operator()(const vkb::core::HPPImageView &image_view) const
 	{
-		size_t result = std::hash<vkb::core::VulkanResource<vkb::BindingType::Cpp, vk::ImageView>>()(image_view);
+		size_t result = std::hash<vkb::core::VulkanResourceCpp<vk::ImageView>>()(image_view);
 		vkb::hash_combine(result, image_view.get_image());
 		vkb::hash_combine(result, image_view.get_format());
 		vkb::hash_combine(result, image_view.get_subresource_range());
@@ -148,58 +153,6 @@ struct hash<vkb::core::HPPRenderPass>
 	size_t operator()(const vkb::core::HPPRenderPass &render_pass) const
 	{
 		return std::hash<vkb::RenderPass>()(reinterpret_cast<vkb::RenderPass const &>(render_pass));
-	}
-};
-
-template <>
-struct hash<vkb::core::HPPShaderModule>
-{
-	size_t operator()(const vkb::core::HPPShaderModule &shader_module) const
-	{
-		return std::hash<vkb::ShaderModule>()(reinterpret_cast<vkb::ShaderModule const &>(shader_module));
-	}
-};
-
-template <>
-struct hash<vkb::core::HPPShaderResource>
-{
-	size_t operator()(vkb::core::HPPShaderResource const &shader_resource) const
-	{
-		size_t result = 0;
-		vkb::hash_combine(result, shader_resource.stages);
-		vkb::hash_combine(result, shader_resource.type);
-		vkb::hash_combine(result, shader_resource.mode);
-		vkb::hash_combine(result, shader_resource.set);
-		vkb::hash_combine(result, shader_resource.binding);
-		vkb::hash_combine(result, shader_resource.location);
-		vkb::hash_combine(result, shader_resource.input_attachment_index);
-		vkb::hash_combine(result, shader_resource.vec_size);
-		vkb::hash_combine(result, shader_resource.columns);
-		vkb::hash_combine(result, shader_resource.array_size);
-		vkb::hash_combine(result, shader_resource.offset);
-		vkb::hash_combine(result, shader_resource.size);
-		vkb::hash_combine(result, shader_resource.constant_id);
-		vkb::hash_combine(result, shader_resource.qualifiers);
-		vkb::hash_combine(result, shader_resource.name);
-		return result;
-	}
-};
-
-template <>
-struct hash<vkb::core::HPPShaderSource>
-{
-	size_t operator()(const vkb::core::HPPShaderSource &shader_source) const
-	{
-		return std::hash<vkb::ShaderSource>()(reinterpret_cast<vkb::ShaderSource const &>(shader_source));
-	}
-};
-
-template <>
-struct hash<vkb::core::HPPShaderVariant>
-{
-	size_t operator()(const vkb::core::HPPShaderVariant &shader_variant) const
-	{
-		return std::hash<vkb::ShaderVariant>()(reinterpret_cast<vkb::ShaderVariant const &>(shader_variant));
 	}
 };
 
@@ -221,9 +174,9 @@ struct hash<vkb::core::HPPSubpassInfo>
 };
 
 template <>
-struct hash<vkb::rendering::HPPAttachment>
+struct hash<vkb::rendering::AttachmentCpp>
 {
-	size_t operator()(const vkb::rendering::HPPAttachment &attachment) const
+	size_t operator()(const vkb::rendering::AttachmentCpp &attachment) const
 	{
 		size_t result = 0;
 		vkb::hash_combine(result, attachment.format);
@@ -235,37 +188,18 @@ struct hash<vkb::rendering::HPPAttachment>
 };
 
 template <>
-struct hash<vkb::rendering::HPPPipelineState>
+struct hash<vkb::rendering::RenderTargetCpp>
 {
-	size_t operator()(const vkb::rendering::HPPPipelineState &pipeline_state) const
+	size_t operator()(const vkb::rendering::RenderTargetCpp &render_target) const
 	{
-		return std::hash<vkb::PipelineState>()(reinterpret_cast<vkb::PipelineState const &>(pipeline_state));
-	}
-};
+		std::size_t result = 0;
 
-template <>
-struct hash<vkb::rendering::HPPRenderTarget>
-{
-	size_t operator()(const vkb::rendering::HPPRenderTarget &render_target) const
-	{
-		size_t result = 0;
-		vkb::hash_combine(result, render_target.get_extent());
 		for (auto const &view : render_target.get_views())
 		{
-			vkb::hash_combine(result, view);
+			vkb::hash_combine(result, view.get_handle());
+			vkb::hash_combine(result, view.get_image().get_handle());
 		}
-		for (auto const &attachment : render_target.get_attachments())
-		{
-			vkb::hash_combine(result, attachment);
-		}
-		for (auto const &input : render_target.get_input_attachments())
-		{
-			vkb::hash_combine(result, input);
-		}
-		for (auto const &output : render_target.get_output_attachments())
-		{
-			vkb::hash_combine(result, output);
-		}
+
 		return result;
 	}
 };
@@ -292,20 +226,6 @@ struct HPPRecordHelper
 
 	void index(HPPResourceRecord & /*recorder*/, size_t /*index*/, T & /*resource*/)
 	{}
-};
-
-template <class... A>
-struct HPPRecordHelper<vkb::core::HPPShaderModule, A...>
-{
-	size_t record(HPPResourceRecord &recorder, A &...args)
-	{
-		return recorder.register_shader_module(args...);
-	}
-
-	void index(HPPResourceRecord &recorder, size_t index, vkb::core::HPPShaderModule &shader_module)
-	{
-		recorder.set_shader_module(index, shader_module);
-	}
 };
 
 template <class... A>
@@ -349,10 +269,28 @@ struct HPPRecordHelper<vkb::core::HPPGraphicsPipeline, A...>
 		recorder.set_graphics_pipeline(index, graphics_pipeline);
 	}
 };
+
+template <class... A>
+struct HPPRecordHelper<vkb::core::ShaderModuleCpp, A...>
+{
+	size_t record(HPPResourceRecord &recorder, A &...args)
+	{
+		return recorder.register_shader_module(args...);
+	}
+
+	void index(HPPResourceRecord &recorder, size_t index, vkb::core::ShaderModuleCpp &shader_module)
+	{
+		recorder.set_shader_module(index, shader_module);
+	}
+};
+
 }        // namespace
 
 template <class T, class... A>
-T &request_resource(vkb::core::HPPDevice &device, vkb::HPPResourceRecord *recorder, std::unordered_map<size_t, T> &resources, A &...args)
+T &request_resource(vkb::core::DeviceCpp          &device,
+                    vkb::HPPResourceRecord        *recorder,
+                    std::unordered_map<size_t, T> &resources,
+                    A &...args)
 {
 	HPPRecordHelper<T, A...> record_helper;
 
@@ -383,7 +321,8 @@ T &request_resource(vkb::core::HPPDevice &device, vkb::HPPResourceRecord *record
 
 		if (!res_ins_it.second)
 		{
-			throw std::runtime_error{std::string{"Insertion error for #"} + std::to_string(res_id) + "cache object (" + res_type + ")"};
+			throw std::runtime_error{std::string{"Insertion error for #"} + std::to_string(res_id) + "cache object (" +
+			                         res_type + ")"};
 		}
 
 		res_it = res_ins_it.first;

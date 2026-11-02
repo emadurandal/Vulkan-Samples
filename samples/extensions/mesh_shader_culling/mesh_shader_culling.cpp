@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Holochip Corporation
+/* Copyright (c) 2023-2026, Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,16 +23,6 @@
 MeshShaderCulling::MeshShaderCulling()
 {
 	title = "Mesh shader culling";
-
-	// Configure application version
-	set_api_version(VK_API_VERSION_1_1);
-
-	// Adding device extensions
-	add_device_extension(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-	add_device_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
-	add_device_extension(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
-	// Targeting SPIR-V version
-	vkb::GLSLCompiler::set_target_environment(glslang::EShTargetSpv, glslang::EShTargetSpv_1_4);
 }
 
 MeshShaderCulling::~MeshShaderCulling()
@@ -52,33 +42,21 @@ MeshShaderCulling::~MeshShaderCulling()
 	}
 }
 
-void MeshShaderCulling::request_gpu_features(vkb::PhysicalDevice &gpu)
+void MeshShaderCulling::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_KHR_SPIRV_1_4_EXTENSION_NAME]             = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_MESH_SHADER_EXTENSION_NAME]           = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void MeshShaderCulling::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Check whether the device supports task and mesh shaders
-	VkPhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features;
-	mesh_shader_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-	mesh_shader_features.pNext = VK_NULL_HANDLE;
-	VkPhysicalDeviceFeatures2 features2;
-	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	features2.pNext = &mesh_shader_features;
-	vkGetPhysicalDeviceFeatures2(gpu.get_handle(), &features2);
-
-	if (!mesh_shader_features.taskShader || !mesh_shader_features.meshShader)
-	{
-		throw vkb::VulkanException(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support task and mesh shaders!");
-	}
-	if (!mesh_shader_features.meshShaderQueries)
-	{
-		throw vkb::VulkanException(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support mesh shader queries!");
-	}
-
-	// Enable extension features required by this sample
-	// These are passed to device creation via a pNext structure chain
-	auto &meshFeatures = gpu.request_extension_features<VkPhysicalDeviceMeshShaderFeaturesEXT>(
-	    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT);
-
-	meshFeatures.taskShader = VK_TRUE;
-	meshFeatures.meshShader = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceMeshShaderFeaturesEXT, meshShader);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceMeshShaderFeaturesEXT, meshShaderQueries);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceMeshShaderFeaturesEXT, taskShader);
 
 	// Pipeline statistics
 	auto &requested_features = gpu.get_mutable_requested_features();
@@ -248,9 +226,9 @@ void MeshShaderCulling::prepare_pipelines()
 	// Shader state
 	std::vector<VkPipelineShaderStageCreateInfo> shader_stages{};
 
-	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.task", VK_SHADER_STAGE_TASK_BIT_EXT));
-	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.mesh", VK_SHADER_STAGE_MESH_BIT_EXT));
-	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.frag", VK_SHADER_STAGE_FRAGMENT_BIT));
+	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT));
+	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT));
+	shader_stages.push_back(load_shader("mesh_shader_culling/mesh_shader_culling.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT));
 
 	pipeline_create_info.pVertexInputState   = nullptr;
 	pipeline_create_info.pInputAssemblyState = nullptr;
@@ -268,10 +246,10 @@ void MeshShaderCulling::prepare_pipelines()
 
 void MeshShaderCulling::prepare_uniform_buffers()
 {
-	uniform_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                     sizeof(ubo_cull),
-	                                                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                      sizeof(ubo_cull),
+	                                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
 	update_uniform_buffers();
 }
 
@@ -377,7 +355,7 @@ bool MeshShaderCulling::resize(uint32_t width, uint32_t height)
 	return true;
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_mesh_shader_culling()
+std::unique_ptr<vkb::VulkanSampleC> create_mesh_shader_culling()
 {
 	return std::make_unique<MeshShaderCulling>();
 }
@@ -397,8 +375,9 @@ void MeshShaderCulling::setup_query_result_buffer()
 	// Results are saved in a host visible buffer for easy access by the application
 	VK_CHECK(vkCreateBuffer(get_device().get_handle(), &buffer_create_info, nullptr, &query_result.buffer));
 	vkGetBufferMemoryRequirements(get_device().get_handle(), query_result.buffer, &memory_requirements);
-	memory_allocation.allocationSize  = memory_requirements.size;
-	memory_allocation.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	memory_allocation.allocationSize = memory_requirements.size;
+	memory_allocation.memoryTypeIndex =
+	    get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocation, nullptr, &query_result.memory));
 	VK_CHECK(vkBindBufferMemory(get_device().get_handle(), query_result.buffer, query_result.memory, 0));
 

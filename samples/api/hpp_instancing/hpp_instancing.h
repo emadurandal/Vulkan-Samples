@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -39,7 +39,7 @@ class HPPInstancing : public HPPApiVulkanSample
 	// Contains the instanced data
 	struct InstanceBuffer
 	{
-		std::unique_ptr<vkb::core::HPPBuffer> buffer;
+		std::unique_ptr<vkb::core::BufferCpp> buffer;
 		vk::DescriptorBufferInfo              descriptor;
 		size_t                                size = 0;
 	};
@@ -79,7 +79,7 @@ class HPPInstancing : public HPPApiVulkanSample
 
 	struct UniformBuffers
 	{
-		std::unique_ptr<vkb::core::HPPBuffer> scene;
+		std::unique_ptr<vkb::core::BufferCpp> scene;
 	};
 
   private:
@@ -88,7 +88,7 @@ class HPPInstancing : public HPPApiVulkanSample
 	bool resize(const uint32_t width, const uint32_t height) override;
 
 	// from vkb::VulkanSample
-	void request_gpu_features(vkb::core::HPPPhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceCpp &gpu) override;
 
 	// from HPPApiVulkanSample
 	void build_command_buffers() override;

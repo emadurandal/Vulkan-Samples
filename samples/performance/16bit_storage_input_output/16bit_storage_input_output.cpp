@@ -1,4 +1,4 @@
-/* Copyright (c) 2020-2024, Arm Limited and Contributors
+/* Copyright (c) 2020-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,16 +25,6 @@
 
 KHR16BitStorageInputOutputSample::KHR16BitStorageInputOutputSample()
 {
-	// For enabling 16-bit storage device extensions.
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, true);
-
-	// Will be used in vertex and fragment shaders to declare varying data as FP16 rather than FP32.
-	// This significantly reduces bandwidth as varyings are stored in main memory on TBDR architectures.
-	// On Vulkan 1.1, this extension is in core, but just enable the extension in case we are running on a Vulkan 1.0 implementation.
-	add_device_extension(VK_KHR_16BIT_STORAGE_EXTENSION_NAME, true);
-	// 16-bit storage depends on this extension as well.
-	add_device_extension(VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, true);
-
 	auto &config = get_configuration();
 
 	config.insert<vkb::BoolSetting>(0, khr_16bit_storage_input_output_enabled, false);
@@ -119,7 +109,7 @@ void KHR16BitStorageInputOutputSample::setup_scene()
 				continue;
 			}
 
-			auto node = std::make_unique<vkb::sg::Node>(-1, "Teapot");
+			auto node = std::make_unique<vkb::scene_graph::NodeC>(-1, "Teapot");
 			node->set_component(*teapot_mesh);
 			teapot_mesh->add_node(*node);
 
@@ -148,20 +138,20 @@ void KHR16BitStorageInputOutputSample::update_pipeline()
 	const std::string base_path = "16bit_storage_input_output/";
 	if (khr_16bit_storage_input_output_enabled && supports_16bit_storage)
 	{
-		vertex_path   = "16bit_storage_input_output_enabled.vert";
-		fragment_path = "16bit_storage_input_output_enabled.frag";
+		vertex_path   = "16bit_storage_input_output_enabled.vert.spv";
+		fragment_path = "16bit_storage_input_output_enabled.frag.spv";
 	}
 	else
 	{
-		vertex_path   = "16bit_storage_input_output_disabled.vert";
-		fragment_path = "16bit_storage_input_output_disabled.frag";
+		vertex_path   = "16bit_storage_input_output_disabled.vert.spv";
+		fragment_path = "16bit_storage_input_output_disabled.frag.spv";
 	}
 
-	vkb::ShaderSource vert_shader(base_path + vertex_path);
-	vkb::ShaderSource frag_shader(base_path + fragment_path);
-	auto              scene_subpass = std::make_unique<vkb::ForwardSubpass>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
+	vkb::core::ShaderSource vert_shader(base_path + vertex_path);
+	vkb::core::ShaderSource frag_shader(base_path + fragment_path);
+	auto                    scene_subpass = std::make_unique<vkb::rendering::subpasses::ForwardSubpassC>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
-	auto render_pipeline = std::make_unique<vkb::RenderPipeline>();
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>();
 	render_pipeline->add_subpass(std::move(scene_subpass));
 
 	set_render_pipeline(std::move(render_pipeline));
@@ -192,10 +182,21 @@ bool KHR16BitStorageInputOutputSample::prepare(const vkb::ApplicationOptions &op
 	return true;
 }
 
-void KHR16BitStorageInputOutputSample::request_gpu_features(vkb::PhysicalDevice &gpu)
+void KHR16BitStorageInputOutputSample::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
 {
-	auto &features_16bit_storage = gpu.request_extension_features<VkPhysicalDevice16BitStorageFeatures>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
-	supports_16bit_storage       = features_16bit_storage.storageInputOutput16 == VK_TRUE;
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Will be used in vertex and fragment shaders to declare varying data as FP16 rather than FP32.
+	// This significantly reduces bandwidth as varyings are stored in main memory on TBDR architectures.
+	// On Vulkan 1.1, this extension is in core, but just enable the extension in case we are running on a Vulkan 1.0 implementation.
+	requested_extensions[VK_KHR_16BIT_STORAGE_EXTENSION_NAME] = vkb::RequestMode::Optional;
+	// 16-bit storage depends on this extension as well.
+	requested_extensions[VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void KHR16BitStorageInputOutputSample::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDevice16BitStorageFeatures, storageInputOutput16);
 }
 
 void KHR16BitStorageInputOutputSample::update(float delta_time)
@@ -246,7 +247,7 @@ void KHR16BitStorageInputOutputSample::recreate_swapchain()
 	get_render_context().update_swapchain(image_usage_flags);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_16bit_storage_input_output()
+std::unique_ptr<vkb::VulkanSampleC> create_16bit_storage_input_output()
 {
 	return std::make_unique<KHR16BitStorageInputOutputSample>();
 }

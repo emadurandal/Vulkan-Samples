@@ -1,4 +1,5 @@
-/* Copyright (c) 2024, Sascha Willems
+/* Copyright (c) 2024-2026, Sascha Willems
+ * Copyright (c) 2024-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -19,6 +20,8 @@
 
 #include "scene_graph/components/sub_mesh.h"
 
+#define validation_layer_name "VK_LAYER_KHRONOS_validation"
+
 std::string ShaderDebugPrintf::debug_output{};
 
 VKAPI_ATTR VkBool32 VKAPI_CALL ShaderDebugPrintf::debug_utils_message_callback(
@@ -27,10 +30,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL ShaderDebugPrintf::debug_utils_message_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
     void                                       *pUserData)
 {
-	if (strcmp(pCallbackData->pMessageIdName, "WARNING-DEBUG-PRINTF") == 0)
+	// Look for Validation Layer message id names: VVL-DEBUG-PRINTF or WARNING-DEBUG-PRINTF or UNASSIGNED-DEBUG-PRINTF (have observed WARNING and UNASSIGNED with older Vulkan SDKs)
+	if (strcmp(pCallbackData->pMessageIdName, "VVL-DEBUG-PRINTF") == 0 || strcmp(pCallbackData->pMessageIdName, "WARNING-DEBUG-PRINTF") == 0 || strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0)
 	{
 		// Validation messages are a bit verbose, but we only want the text from the shader, so we cut off everything before the first word from the shader message
-		// See scene.vert: debugPrintfEXT("Position = %v4f", outPos);
+		// See scene.vert: debugPrintfEXT("Position = %v3f", outPos);
 		std::string shader_message{pCallbackData->pMessage};
 		shader_message = shader_message.substr(shader_message.find("Position"));
 		debug_output.append(shader_message + "\n");
@@ -41,8 +45,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL ShaderDebugPrintf::debug_utils_message_callback(
 ShaderDebugPrintf::ShaderDebugPrintf()
 {
 	title = "Shader debugprintf";
-
-	add_device_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
 }
 
 ShaderDebugPrintf::~ShaderDebugPrintf()
@@ -57,21 +59,91 @@ ShaderDebugPrintf::~ShaderDebugPrintf()
 		vkDestroyDescriptorSetLayout(get_device().get_handle(), descriptor_set_layout, nullptr);
 
 		vkDestroySampler(get_device().get_handle(), textures.skysphere.sampler, nullptr);
-	}
 
-	if (has_instance())
-	{
 		vkDestroyDebugUtilsMessengerEXT(get_instance().get_handle(), debug_utils_messenger, nullptr);
 	}
 }
 
-void ShaderDebugPrintf::request_gpu_features(vkb::PhysicalDevice &gpu)
+uint32_t ShaderDebugPrintf::get_api_version() const
 {
-	// Enable anisotropic filtering if supported
-	if (gpu.get_features().samplerAnisotropy)
+	// The validation layer (VVL) version is needed to work around validation layer performance issues when running with Vulkan SDKs <= 1.3.290
+	uint32_t layer_property_count;
+	VK_CHECK(vkEnumerateInstanceLayerProperties(&layer_property_count, nullptr));
+	std::vector<VkLayerProperties> layer_properties(layer_property_count);
+	VK_CHECK(vkEnumerateInstanceLayerProperties(&layer_property_count, layer_properties.data()));
+
+	const auto vvl_properties = std::ranges::find_if(layer_properties,
+	                                                 [](VkLayerProperties const &properties) { return strcmp(properties.layerName, validation_layer_name) == 0; });
+
+	// Make sure we have found the validation layer before checking the VVL version and enumerating VVL instance extensions for VK_EXT_layer_settings
+	if (vvl_properties != layer_properties.end())
 	{
-		gpu.get_mutable_requested_features().samplerAnisotropy = VK_TRUE;
+		// debugPrintfEXT layer feature requires Vulkan API 1.1, but override with API 1.2 for Vulkan SDKs <= 1.3.290 to work around VVL performance defect
+		// See VVL issue https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/7562 for defect and fix information (fix available in SDK 1.3.296)
+		// Note: An additional, unrelated VVL performance issue affecting nVidia GPUs was found in SDK 1.3.296 following release - for nVidia GPUs please
+		//       use SDK 1.3.290 until a fix is made available in a later SDK (see https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/8766).
+		if (vvl_properties->specVersion <= VK_MAKE_API_VERSION(0, 1, 3, 290))
+		{
+			return VK_API_VERSION_1_2;
+		}
 	}
+	return VK_API_VERSION_1_1;
+}
+
+void ShaderDebugPrintf::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	auto const &supportedFeatures = gpu.get_features();
+	auto       &requestedFeatures = gpu.get_mutable_requested_features();
+
+	// debugPrintfEXT requires fragmentStoresAndAtomics and vertexPipelineStoresAndAtomics
+	if (supportedFeatures.fragmentStoresAndAtomics && supportedFeatures.vertexPipelineStoresAndAtomics)
+	{
+		requestedFeatures.fragmentStoresAndAtomics       = VK_TRUE;
+		requestedFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
+	}
+	else
+	{
+		throw vkb::common::VulkanExceptionC(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support features fragmentStoresAndAtomics and/or vertexPipelineStoresAndAtomics");
+	}
+
+	// Enable anisotropic filtering if supported
+	if (supportedFeatures.samplerAnisotropy)
+	{
+		requestedFeatures.samplerAnisotropy = VK_TRUE;
+	}
+}
+
+void ShaderDebugPrintf::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	ApiVulkanSample::request_instance_extensions(requested_extensions);
+	// Vulkan Samples framework requires VK_EXT_layer_settings extension to use layer settings for configuring the Validation Layer
+	requested_extensions[VK_EXT_LAYER_SETTINGS_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void ShaderDebugPrintf::request_layer_settings(std::vector<VkLayerSettingEXT> &requested_layer_settings, vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const
+{
+	ApiVulkanSample::request_layer_settings(requested_layer_settings, scb);
+	requested_layer_settings.push_back(
+	    {validation_layer_name, "printf_enable", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &scb.add_chain_data<VkBool32>(VK_TRUE)});
+}
+
+void ShaderDebugPrintf::request_validation_feature_enables(std::vector<VkValidationFeatureEnableEXT> &requested_layer_settings) const
+{
+	ApiVulkanSample::request_validation_feature_enables(requested_layer_settings);
+	requested_layer_settings.push_back(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+}
+
+void ShaderDebugPrintf::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void ShaderDebugPrintf::request_layers(std::unordered_map<std::string, vkb::RequestMode> &requested_layers) const
+{
+	ApiVulkanSample::request_layers(requested_layers);
+	requested_layers[validation_layer_name] = vkb::RequestMode::Required;
 }
 
 void ShaderDebugPrintf::build_command_buffers()
@@ -323,8 +395,8 @@ void ShaderDebugPrintf::prepare_pipelines()
 	pipeline_create_info.stageCount          = static_cast<uint32_t>(shader_stages.size());
 	pipeline_create_info.pStages             = shader_stages.data();
 
-	shader_stages[0] = load_shader("shader_debugprintf", "scene.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("shader_debugprintf", "scene.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("shader_debugprintf", "scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("shader_debugprintf", "scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// skysphere pipeline (background cube)
 	rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
@@ -343,10 +415,10 @@ void ShaderDebugPrintf::prepare_pipelines()
 void ShaderDebugPrintf::prepare_uniform_buffers()
 {
 	// Matrices vertex shader uniform buffer
-	uniform_buffers.matrices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                               sizeof(ubo_vs),
-	                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.matrices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                sizeof(ubo_vs),
+	                                                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -375,6 +447,12 @@ bool ShaderDebugPrintf::prepare(const vkb::ApplicationOptions &options)
 		return false;
 	}
 
+	// Register a sample specific debug utils callback in addition to the one registered by the base class
+	if (get_instance().is_extension_enabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+	{
+		vkCreateDebugUtilsMessengerEXT(get_instance().get_handle(), &get_debug_utils_messenger_create_info(), nullptr, &debug_utils_messenger);
+	}
+
 	camera.type = vkb::CameraType::LookAt;
 	camera.set_position(glm::vec3(0.0f, 0.0f, -6.0f));
 	camera.set_rotation(glm::vec3(0.0f, 180.0f, 0.0f));
@@ -393,60 +471,24 @@ bool ShaderDebugPrintf::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-// This sample overrides the instance creation part of the framework to chain in additional structures
-std::unique_ptr<vkb::Instance> ShaderDebugPrintf::create_instance(bool headless)
+VkDebugUtilsMessengerCreateInfoEXT const &ShaderDebugPrintf::get_debug_utils_messenger_create_info() const
 {
-	std::vector<const char *> enabled_extensions;
-	enabled_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	static VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info =
+	    {.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+	     .pNext           = nullptr,
+	     .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
+	     .messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+	     .pfnUserCallback = debug_utils_message_callback,
+	     .pUserData       = nullptr};
+	return debug_utils_messenger_create_info;
+}
 
-	for (const char *extension_name : window->get_required_surface_extensions())
-	{
-		enabled_extensions.push_back(extension_name);
-	}
+void ShaderDebugPrintf::extend_instance_create_info(vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const
+{
+	ApiVulkanSample::extend_instance_create_info(scb);
 
-	enabled_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-	enabled_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-
-	VkApplicationInfo app_info{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-	app_info.pApplicationName = "Shader debugprintf";
-	app_info.pEngineName      = "Vulkan Samples";
-	app_info.apiVersion       = VK_API_VERSION_1_1;
-
-	// Shader printf is a feature of the validation layers that needs to be enabled
-	std::vector<VkValidationFeatureEnableEXT> validation_feature_enables = {VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
-
-	VkValidationFeaturesEXT validation_features{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
-	validation_features.enabledValidationFeatureCount = static_cast<uint32_t>(validation_feature_enables.size());
-	validation_features.pEnabledValidationFeatures    = validation_feature_enables.data();
-
-	std::vector<const char *> validation_layers = {"VK_LAYER_KHRONOS_validation"};
-
-	VkInstanceCreateInfo instance_create_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-	instance_create_info.ppEnabledExtensionNames = enabled_extensions.data();
-	instance_create_info.enabledExtensionCount   = static_cast<uint32_t>(enabled_extensions.size());
-	instance_create_info.pApplicationInfo        = &app_info;
-	instance_create_info.ppEnabledLayerNames     = validation_layers.data();
-	instance_create_info.enabledLayerCount       = static_cast<uint32_t>(validation_layers.size());
-	instance_create_info.pNext                   = &validation_features;
-
-	VkInstance vulkan_instance;
-	VkResult   result = vkCreateInstance(&instance_create_info, nullptr, &vulkan_instance);
-
-	if (result != VK_SUCCESS)
-	{
-		throw vkb::VulkanException{result, "Could not create instance"};
-	}
-
-	volkLoadInstance(vulkan_instance);
-
-	VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
-	debug_utils_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
-	debug_utils_messenger_create_info.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
-	debug_utils_messenger_create_info.pfnUserCallback = debug_utils_message_callback;
-
-	VK_CHECK(vkCreateDebugUtilsMessengerEXT(vulkan_instance, &debug_utils_messenger_create_info, nullptr, &debug_utils_messenger));
-
-	return std::make_unique<vkb::Instance>(vulkan_instance, enabled_extensions);
+	// Register a sample specific debug utils callback in addition to the one registered by the base class
+	scb.add_struct(get_debug_utils_messenger_create_info());
 }
 
 void ShaderDebugPrintf::render(float delta_time)

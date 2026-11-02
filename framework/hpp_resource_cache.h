@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,18 +17,23 @@
 
 #pragma once
 
-#include <core/hpp_descriptor_set.h>
-#include <core/hpp_framebuffer.h>
-#include <core/hpp_pipeline_layout.h>
-#include <core/hpp_render_pass.h>
-#include <hpp_resource_record.h>
-#include <hpp_resource_replay.h>
+#include "core/hpp_descriptor_set.h"
+#include "core/hpp_framebuffer.h"
+#include "core/hpp_pipeline.h"
+#include "core/hpp_pipeline_layout.h"
+#include "core/hpp_render_pass.h"
+#include "hpp_resource_record.h"
+#include "hpp_resource_replay.h"
 #include <vulkan/vulkan.hpp>
 
 namespace vkb
 {
 namespace core
 {
+template <vkb::BindingType bindingType>
+class Device;
+using DeviceCpp = Device<vkb::BindingType::Cpp>;
+
 class HPPDescriptorPool;
 class HPPDescriptorSetLayout;
 class HPPImageView;
@@ -36,8 +41,10 @@ class HPPImageView;
 
 namespace rendering
 {
-class HPPRenderTarget;
-}
+template <vkb::BindingType bindingType>
+class RenderTarget;
+using RenderTargetCpp = RenderTarget<vkb::BindingType::Cpp>;
+}        // namespace rendering
 
 /**
  * @brief Struct to hold the internal state of the Resource Cache
@@ -45,7 +52,7 @@ class HPPRenderTarget;
  */
 struct HPPResourceCacheState
 {
-	std::unordered_map<std::size_t, vkb::core::HPPShaderModule>        shader_modules;
+	std::unordered_map<std::size_t, vkb::core::ShaderModuleCpp>        shader_modules;
 	std::unordered_map<std::size_t, vkb::core::HPPPipelineLayout>      pipeline_layouts;
 	std::unordered_map<std::size_t, vkb::core::HPPDescriptorSetLayout> descriptor_set_layouts;
 	std::unordered_map<std::size_t, vkb::core::HPPDescriptorPool>      descriptor_pools;
@@ -64,7 +71,7 @@ struct HPPResourceCacheState
 class HPPResourceCache
 {
   public:
-	HPPResourceCache(vkb::core::HPPDevice &device);
+	HPPResourceCache(vkb::core::DeviceCpp &device);
 
 	HPPResourceCache(const HPPResourceCache &)            = delete;
 	HPPResourceCache(HPPResourceCache &&)                 = delete;
@@ -75,21 +82,21 @@ class HPPResourceCache
 	void                               clear_framebuffers();
 	void                               clear_pipelines();
 	const HPPResourceCacheState       &get_internal_state() const;
-	vkb::core::HPPComputePipeline     &request_compute_pipeline(vkb::rendering::HPPPipelineState &pipeline_state);
+	vkb::core::HPPComputePipeline     &request_compute_pipeline(vkb::rendering::PipelineStateCpp &pipeline_state);
 	vkb::core::HPPDescriptorSet       &request_descriptor_set(vkb::core::HPPDescriptorSetLayout          &descriptor_set_layout,
 	                                                          const BindingMap<vk::DescriptorBufferInfo> &buffer_infos,
 	                                                          const BindingMap<vk::DescriptorImageInfo>  &image_infos);
 	vkb::core::HPPDescriptorSetLayout &request_descriptor_set_layout(const uint32_t                                   set_index,
-	                                                                 const std::vector<vkb::core::HPPShaderModule *> &shader_modules,
-	                                                                 const std::vector<vkb::core::HPPShaderResource> &set_resources);
-	vkb::core::HPPFramebuffer         &request_framebuffer(const vkb::rendering::HPPRenderTarget &render_target, const vkb::core::HPPRenderPass &render_pass);
-	vkb::core::HPPGraphicsPipeline    &request_graphics_pipeline(vkb::rendering::HPPPipelineState &pipeline_state);
-	vkb::core::HPPPipelineLayout      &request_pipeline_layout(const std::vector<vkb::core::HPPShaderModule *> &shader_modules);
-	vkb::core::HPPRenderPass          &request_render_pass(const std::vector<vkb::rendering::HPPAttachment> &attachments,
+	                                                                 const std::vector<vkb::core::ShaderModuleCpp *> &shader_modules,
+	                                                                 const std::vector<vkb::core::ShaderResourceCpp> &set_resources);
+	vkb::core::HPPFramebuffer         &request_framebuffer(const vkb::rendering::RenderTargetCpp &render_target, const vkb::core::HPPRenderPass &render_pass);
+	vkb::core::HPPGraphicsPipeline    &request_graphics_pipeline(vkb::rendering::PipelineStateCpp &pipeline_state);
+	vkb::core::HPPPipelineLayout      &request_pipeline_layout(const std::vector<vkb::core::ShaderModuleCpp *> &shader_modules);
+	vkb::core::HPPRenderPass          &request_render_pass(const std::vector<vkb::rendering::AttachmentCpp> &attachments,
 	                                                       const std::vector<vkb::common::HPPLoadStoreInfo> &load_store_infos,
 	                                                       const std::vector<vkb::core::HPPSubpassInfo>     &subpasses);
-	vkb::core::HPPShaderModule        &request_shader_module(
-	           vk::ShaderStageFlagBits stage, const vkb::core::HPPShaderSource &glsl_source, const vkb::core::HPPShaderVariant &shader_variant = {});
+	vkb::core::ShaderModuleCpp        &request_shader_module(
+	           vk::ShaderStageFlagBits stage, const vkb::core::ShaderSource &glsl_source, const vkb::core::ShaderVariant &shader_variant = {});
 	std::vector<uint8_t> serialize();
 	void                 set_pipeline_cache(vk::PipelineCache pipeline_cache);
 
@@ -101,7 +108,7 @@ class HPPResourceCache
 	void warmup(const std::vector<uint8_t> &data);
 
   private:
-	vkb::core::HPPDevice  &device;
+	vkb::core::DeviceCpp  &device;
 	vkb::HPPResourceRecord recorder                    = {};
 	vkb::HPPResourceReplay replayer                    = {};
 	vk::PipelineCache      pipeline_cache              = nullptr;

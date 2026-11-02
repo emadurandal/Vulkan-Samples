@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,9 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2024 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
  */
 
 /*
@@ -87,16 +84,6 @@ struct ObjCube : ObjModelCpu
 RaytracingReflection::RaytracingReflection()
 {
 	title = "Hardware accelerated ray tracing";
-
-	set_api_version(VK_API_VERSION_1_2);
-
-	// Ray tracing related extensions required by this sample
-	add_device_extension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-	add_device_extension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-
-	// Required by VK_KHR_acceleration_structure
-	add_device_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-	add_device_extension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
 }
 
 RaytracingReflection::~RaytracingReflection()
@@ -127,21 +114,54 @@ RaytracingReflection::~RaytracingReflection()
 	}
 }
 
+uint32_t RaytracingReflection::get_api_version() const
+{
+	return VK_API_VERSION_1_2;
+}
+
+void RaytracingReflection::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Ray tracing related extensions required by this sample
+	requested_extensions[VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME]   = vkb::RequestMode::Required;
+
+	// Required by VK_KHR_acceleration_structure
+	requested_extensions[VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
 /*
     Enable extension features required by this sample
     These are passed to device creation via a pNext structure chain
 */
-void RaytracingReflection::request_gpu_features(vkb::PhysicalDevice &gpu)
+void RaytracingReflection::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
-	// The request is filling with the capabilities (all on by default)
-	auto &vulkan12_features = gpu.request_extension_features<VkPhysicalDeviceVulkan12Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
-	auto &vulkan11_features = gpu.request_extension_features<VkPhysicalDeviceVulkan11Features>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceVulkan12Features, bufferDeviceAddress);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceVulkan12Features, scalarBlockLayout);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceAccelerationStructureFeaturesKHR, accelerationStructure);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceRayTracingPipelineFeaturesKHR, rayTracingPipeline);
 
-	auto &ray_tracing_features            = gpu.request_extension_features<VkPhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR);
-	auto &acceleration_structure_features = gpu.request_extension_features<VkPhysicalDeviceAccelerationStructureFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR);
+	if (gpu.get_features().shaderInt64)
+	{
+		gpu.get_mutable_requested_features().shaderInt64 = VK_TRUE;
+	}
+	else
+	{
+		throw std::runtime_error("Requested required feature <VkPhysicalDeviceFeatures::shaderInt64> is not supported");
+	}
 
-	// Enabling all Vulkan features (Int64)
-	gpu.get_mutable_requested_features() = gpu.get_features();
+	// Using this removes the need to explicitly force an image format inside the shader
+	if (gpu.get_features().shaderStorageImageReadWithoutFormat && gpu.get_features().shaderStorageImageWriteWithoutFormat)
+	{
+		gpu.get_mutable_requested_features().shaderStorageImageReadWithoutFormat  = VK_TRUE;
+		gpu.get_mutable_requested_features().shaderStorageImageWriteWithoutFormat = VK_TRUE;
+	}
+	else
+	{
+		throw std::runtime_error("Requested required feature shaderStorageImageReadWithoutFormat or shaderStorageImageWriteWithoutFormat is not supported");
+	}
 }
 
 /*
@@ -170,7 +190,7 @@ void RaytracingReflection::create_storage_image()
 	vkGetImageMemoryRequirements(get_device().get_handle(), storage_image.image, &memory_requirements);
 	VkMemoryAllocateInfo memory_allocate_info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
 	memory_allocate_info.allocationSize  = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &storage_image.memory));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), storage_image.image, storage_image.memory, 0));
 
@@ -212,7 +232,7 @@ void RaytracingReflection::create_bottom_level_acceleration_structure(ObjModelGp
 	    1.0f, 0.0f, 0.0f, 0.0f,
 	    0.0f, 1.0f, 0.0f, 0.0f,
 	    0.0f, 0.0f, 1.0f, 0.0f};
-	std::unique_ptr<vkb::core::Buffer> transform_matrix_buffer = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(transform_matrix), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	std::unique_ptr<vkb::core::BufferC> transform_matrix_buffer = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(transform_matrix), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	transform_matrix_buffer->update(&transform_matrix, sizeof(transform_matrix));
 
 	VkDeviceOrHostAddressConstKHR vertex_data_device_address{};
@@ -257,7 +277,7 @@ void RaytracingReflection::create_bottom_level_acceleration_structure(ObjModelGp
 
 	// Create a buffer to hold the acceleration structure
 	AccelerationStructure blas;
-	blas.buffer = std::make_unique<vkb::core::Buffer>(get_device(), acceleration_structure_build_sizes_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+	blas.buffer = std::make_unique<vkb::core::BufferC>(get_device(), acceleration_structure_build_sizes_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
 	// Create the acceleration structure
 	VkAccelerationStructureCreateInfoKHR acceleration_structure_create_info{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR};
@@ -269,10 +289,11 @@ void RaytracingReflection::create_bottom_level_acceleration_structure(ObjModelGp
 	// The actual build process starts here
 
 	// Create a scratch buffer as a temporary storage for the acceleration structure build
-	std::unique_ptr<vkb::core::Buffer> sc_buffer;
-	sc_buffer = std::make_unique<vkb::core::Buffer>(get_device(), acceleration_structure_build_sizes_info.buildScratchSize,
-	                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-	                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
+	std::unique_ptr<vkb::core::BufferC> sc_buffer;
+	sc_buffer = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(acceleration_structure_build_sizes_info.buildScratchSize)
+	                                                                   .with_usage(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+	                                                                   .with_vma_usage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+	                                                                   .with_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment));
 
 	VkAccelerationStructureBuildGeometryInfoKHR acceleration_build_geometry_info{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
 	acceleration_build_geometry_info.type                      = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
@@ -311,10 +332,10 @@ void RaytracingReflection::create_bottom_level_acceleration_structure(ObjModelGp
 */
 void RaytracingReflection::create_top_level_acceleration_structure(std::vector<VkAccelerationStructureInstanceKHR> &blas_instances)
 {
-	std::unique_ptr<vkb::core::Buffer> instances_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                                          sizeof(VkAccelerationStructureInstanceKHR) * blas_instances.size(),
-	                                                                                          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-	                                                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+	std::unique_ptr<vkb::core::BufferC> instances_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                                            sizeof(VkAccelerationStructureInstanceKHR) * blas_instances.size(),
+	                                                                                            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+	                                                                                            VMA_MEMORY_USAGE_CPU_TO_GPU);
 	instances_buffer->update(blas_instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * blas_instances.size());
 
 	VkDeviceOrHostAddressConstKHR instance_data_device_address{};
@@ -345,7 +366,7 @@ void RaytracingReflection::create_top_level_acceleration_structure(std::vector<V
 	    &acceleration_structure_build_sizes_info);
 
 	// Create a buffer to hold the acceleration structure
-	top_level_acceleration_structure.buffer = std::make_unique<vkb::core::Buffer>(
+	top_level_acceleration_structure.buffer = std::make_unique<vkb::core::BufferC>(
 	    get_device(),
 	    acceleration_structure_build_sizes_info.accelerationStructureSize,
 	    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -361,10 +382,11 @@ void RaytracingReflection::create_top_level_acceleration_structure(std::vector<V
 	// The actual build process starts here
 
 	// Create a scratch buffer as a temporary storage for the acceleration structure build
-	std::unique_ptr<vkb::core::Buffer> sc_buffer;
-	sc_buffer = std::make_unique<vkb::core::Buffer>(get_device(), acceleration_structure_build_sizes_info.buildScratchSize,
-	                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-	                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
+	std::unique_ptr<vkb::core::BufferC> sc_buffer;
+	sc_buffer = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(acceleration_structure_build_sizes_info.buildScratchSize)
+	                                                                   .with_usage(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+	                                                                   .with_vma_usage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+	                                                                   .with_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment));
 
 	VkAccelerationStructureBuildGeometryInfoKHR acceleration_build_geometry_info{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
 	acceleration_build_geometry_info.type                      = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
@@ -426,19 +448,19 @@ void RaytracingReflection::create_model(ObjModelCpu &obj, const std::vector<ObjM
 	// Note that the buffer usage flags for buffers consumed by the bottom level acceleration structure require special flags
 	VkBufferUsageFlags buffer_usage_flags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-	model.vertex_buffer = std::make_unique<vkb::core::Buffer>(get_device(), vertex_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	model.vertex_buffer = std::make_unique<vkb::core::BufferC>(get_device(), vertex_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	model.vertex_buffer->update(obj.vertices.data(), vertex_buffer_size);
 
-	model.index_buffer = std::make_unique<vkb::core::Buffer>(get_device(), index_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	model.index_buffer = std::make_unique<vkb::core::BufferC>(get_device(), index_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	model.index_buffer->update(obj.indices.data(), index_buffer_size);
 
 	// Acceleration structure flag is not needed for the rest
 	buffer_usage_flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-	model.mat_index_buffer = std::make_unique<vkb::core::Buffer>(get_device(), mat_index_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	model.mat_index_buffer = std::make_unique<vkb::core::BufferC>(get_device(), mat_index_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	model.mat_index_buffer->update(mat_index.data(), mat_index_buffer_size);
 
-	model.mat_color_buffer = std::make_unique<vkb::core::Buffer>(get_device(), mat_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	model.mat_color_buffer = std::make_unique<vkb::core::BufferC>(get_device(), mat_buffer_size, buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	model.mat_color_buffer->update(reinterpret_cast<const uint8_t *>(materials.data()), mat_buffer_size);
 
 	obj_models.push_back(std::move(model));
@@ -487,7 +509,7 @@ void RaytracingReflection::create_buffer_references()
 		obj_data.emplace_back(data);
 	}
 	VkBufferUsageFlags buffer_usage_flags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	scene_desc                            = std::make_unique<vkb::core::Buffer>(get_device(), nbObj * sizeof(ObjBuffers), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	scene_desc                            = std::make_unique<vkb::core::BufferC>(get_device(), nbObj * sizeof(ObjBuffers), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	scene_desc->update(obj_data.data(), nbObj * sizeof(ObjBuffers));
 }
 
@@ -574,9 +596,18 @@ void RaytracingReflection::create_shader_binding_tables()
 	const VmaMemoryUsage     sbt_memory_usage       = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
 	// Create binding table buffers for each shader type
-	raygen_shader_binding_table = std::make_unique<vkb::core::Buffer>(get_device(), handle_size_aligned * rgen_index.size(), sbt_buffer_usage_flags, sbt_memory_usage, 0);
-	miss_shader_binding_table   = std::make_unique<vkb::core::Buffer>(get_device(), handle_size_aligned * miss_index.size(), sbt_buffer_usage_flags, sbt_memory_usage, 0);
-	hit_shader_binding_table    = std::make_unique<vkb::core::Buffer>(get_device(), handle_size_aligned * hit_index.size(), sbt_buffer_usage_flags, sbt_memory_usage, 0);
+	raygen_shader_binding_table = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size_aligned * rgen_index.size())
+	                                                                                     .with_usage(sbt_buffer_usage_flags)
+	                                                                                     .with_vma_usage(sbt_memory_usage)
+	                                                                                     .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
+	miss_shader_binding_table   = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size_aligned * miss_index.size())
+                                                                                       .with_usage(sbt_buffer_usage_flags)
+                                                                                       .with_vma_usage(sbt_memory_usage)
+                                                                                       .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
+	hit_shader_binding_table    = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size_aligned * hit_index.size())
+                                                                                      .with_usage(sbt_buffer_usage_flags)
+                                                                                      .with_vma_usage(sbt_memory_usage)
+                                                                                      .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
 
 	// Copy the pipeline's shader handles into a host buffer
 	const auto           group_count = static_cast<uint32_t>(rgen_index.size() + miss_index.size() + hit_index.size());
@@ -703,9 +734,6 @@ void RaytracingReflection::create_ray_tracing_pipeline()
 
 	VK_CHECK(vkCreatePipelineLayout(get_device().get_handle(), &pipeline_layout_create_info, nullptr, &pipeline_layout));
 
-	// Ray tracing shaders + buffer reference require SPIR-V 1.5, so we need to set the appropriate target environment for the glslang compiler
-	vkb::GLSLCompiler::set_target_environment(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
-
 	/*
 	    Setup ray tracing shader groups
 	    Each shader group points at the corresponding shader in the pipeline
@@ -714,7 +742,7 @@ void RaytracingReflection::create_ray_tracing_pipeline()
 
 	// Ray generation group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_reflection/raygen.rgen", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_reflection/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR raygen_group_ci{VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR};
 		raygen_group_ci.type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 		raygen_group_ci.generalShader      = static_cast<uint32_t>(shader_stages.size()) - 1;
@@ -726,7 +754,7 @@ void RaytracingReflection::create_ray_tracing_pipeline()
 
 	// Ray miss group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_reflection/miss.rmiss", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_reflection/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR miss_group_ci{VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR};
 		miss_group_ci.type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 		miss_group_ci.generalShader      = static_cast<uint32_t>(shader_stages.size()) - 1;
@@ -738,7 +766,7 @@ void RaytracingReflection::create_ray_tracing_pipeline()
 
 	// Ray miss (shadow) group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_reflection/missShadow.rmiss", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_reflection/missShadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR miss_group_ci{VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR};
 		miss_group_ci.type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 		miss_group_ci.generalShader      = static_cast<uint32_t>(shader_stages.size()) - 1;
@@ -750,7 +778,7 @@ void RaytracingReflection::create_ray_tracing_pipeline()
 
 	// Ray closest hit group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_reflection/closesthit.rchit", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_reflection/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR closes_hit_group_ci{VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR};
 		closes_hit_group_ci.type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
 		closes_hit_group_ci.generalShader      = VK_SHADER_UNUSED_KHR;
@@ -794,7 +822,7 @@ void RaytracingReflection::delete_acceleration_structure(AccelerationStructure &
 */
 void RaytracingReflection::create_uniform_buffer()
 {
-	ubo = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(uniform_data), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	ubo = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(uniform_data), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	ubo->convert_and_update(uniform_data);
 	update_uniform_buffers();
 }
@@ -874,8 +902,13 @@ void RaytracingReflection::build_command_buffers()
 		// Prepare current swap chain image as transfer destination
 		vkb::image_layout_transition(draw_cmd_buffers[i],
 		                             get_render_context().get_swapchain().get_images()[i],
+		                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+		                             {},
+		                             VK_ACCESS_TRANSFER_WRITE_BIT,
 		                             VK_IMAGE_LAYOUT_UNDEFINED,
-		                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                             subresource_range);
 
 		// Prepare ray tracing output image as transfer source
 		vkb::image_layout_transition(draw_cmd_buffers[i],
@@ -1008,7 +1041,7 @@ void RaytracingReflection::render(float delta_time)
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_ray_tracing_reflection()
+std::unique_ptr<vkb::VulkanSampleC> create_ray_tracing_reflection()
 {
 	return std::make_unique<RaytracingReflection>();
 }

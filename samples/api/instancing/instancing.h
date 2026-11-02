@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2023, Sascha Willems
+/* Copyright (c) 2019-2025, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -55,9 +55,9 @@ class Instancing : public ApiVulkanSample
 	// Contains the instanced data
 	struct InstanceBuffer
 	{
-		std::unique_ptr<vkb::core::Buffer> buffer;
-		size_t                             size = 0;
-		VkDescriptorBufferInfo             descriptor;
+		std::unique_ptr<vkb::core::BufferC> buffer;
+		size_t                              size = 0;
+		VkDescriptorBufferInfo              descriptor;
 	} instance_buffer;
 
 	struct UBOVS
@@ -71,7 +71,7 @@ class Instancing : public ApiVulkanSample
 
 	struct UniformBuffers
 	{
-		std::unique_ptr<vkb::core::Buffer> scene;
+		std::unique_ptr<vkb::core::BufferC> scene;
 	} uniform_buffers;
 
 	VkPipelineLayout pipeline_layout;
@@ -91,7 +91,7 @@ class Instancing : public ApiVulkanSample
 
 	Instancing();
 	~Instancing();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         load_assets();
 	void         setup_descriptor_pool();

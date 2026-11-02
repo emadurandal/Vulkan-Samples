@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Sascha Willems
+/* Copyright (c) 2024-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -29,15 +29,6 @@
 DescriptorBufferBasic::DescriptorBufferBasic()
 {
 	title = "Descriptor buffers";
-
-	set_api_version(VK_API_VERSION_1_1);
-
-	// Enable extension required for descriptor buffers
-	add_device_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-	add_device_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-	add_device_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-
-	add_device_extension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
 }
 
 DescriptorBufferBasic::~DescriptorBufferBasic()
@@ -60,7 +51,19 @@ DescriptorBufferBasic::~DescriptorBufferBasic()
 	}
 }
 
-void DescriptorBufferBasic::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DescriptorBufferBasic::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Enable extension required for descriptor buffers
+	requested_extensions[VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME]   = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME]     = vkb::RequestMode::Required;
+
+	requested_extensions[VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void DescriptorBufferBasic::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
@@ -71,12 +74,10 @@ void DescriptorBufferBasic::request_gpu_features(vkb::PhysicalDevice &gpu)
 	// Enable features required for this example
 
 	// We need device addresses for buffers in certain places
-	auto &requested_buffer_device_address_features               = gpu.request_extension_features<VkPhysicalDeviceBufferDeviceAddressFeatures>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES);
-	requested_buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceBufferDeviceAddressFeatures, bufferDeviceAddress);
 
 	// We need to enable the descriptor buffer feature of the VK_EXT_descriptor_buffer extension
-	auto &requested_buffer_descriptor_buffer_features            = gpu.request_extension_features<VkPhysicalDeviceDescriptorBufferFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT);
-	requested_buffer_descriptor_buffer_features.descriptorBuffer = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorBufferFeaturesEXT, descriptorBuffer);
 }
 
 void DescriptorBufferBasic::build_command_buffers()
@@ -244,9 +245,8 @@ void DescriptorBufferBasic::prepare_pipelines()
 	    vkb::initializers::vertex_input_binding_description(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX),
 	};
 	const std::vector<VkVertexInputAttributeDescription> vertex_input_attributes = {
-	    vkb::initializers::vertex_input_attribute_description(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),                        // Location 0: Position
-	    vkb::initializers::vertex_input_attribute_description(0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3),        // Location 1: Normal
-	    vkb::initializers::vertex_input_attribute_description(0, 2, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 6),           // Location 2: UV
+	    vkb::initializers::vertex_input_attribute_description(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),                     // Location 0: Position
+	    vkb::initializers::vertex_input_attribute_description(0, 1, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 6),        // Location 1: UV
 	};
 	VkPipelineVertexInputStateCreateInfo vertex_input_state = vkb::initializers::pipeline_vertex_input_state_create_info();
 	vertex_input_state.vertexBindingDescriptionCount        = static_cast<uint32_t>(vertex_input_bindings.size());
@@ -268,8 +268,8 @@ void DescriptorBufferBasic::prepare_pipelines()
 	pipeline_create_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
 	const std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages = {
-	    load_shader("descriptor_buffer_basic", "cube.vert", VK_SHADER_STAGE_VERTEX_BIT),
-	    load_shader("descriptor_buffer_basic", "cube.frag", VK_SHADER_STAGE_FRAGMENT_BIT)};
+	    load_shader("descriptor_buffer_basic", "cube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+	    load_shader("descriptor_buffer_basic", "cube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
 	pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stages.size());
 	pipeline_create_info.pStages    = shader_stages.data();
@@ -281,16 +281,16 @@ void DescriptorBufferBasic::prepare_pipelines()
 void DescriptorBufferBasic::prepare_descriptor_buffer()
 {
 	// This buffer will contain resource descriptors for all the uniform buffers (one per cube and one with global matrices)
-	uniform_binding_descriptor.buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                        (static_cast<uint32_t>(cubes.size()) + 1) * uniform_binding_descriptor.size,
-	                                                                        VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-	                                                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_binding_descriptor.buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                         (static_cast<uint32_t>(cubes.size()) + 1) * uniform_binding_descriptor.size,
+	                                                                         VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+	                                                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	// Samplers and combined images need to be stored in a separate buffer due to different flags (VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT) (one image per cube)
-	image_binding_descriptor.buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                      static_cast<uint32_t>(cubes.size()) * image_binding_descriptor.size,
-	                                                                      VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-	                                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
+	image_binding_descriptor.buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                       static_cast<uint32_t>(cubes.size()) * image_binding_descriptor.size,
+	                                                                       VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+	                                                                       VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	// Put the descriptors into the above buffers
 
@@ -346,18 +346,18 @@ void DescriptorBufferBasic::prepare_descriptor_buffer()
 void DescriptorBufferBasic::prepare_uniform_buffers()
 {
 	// Vertex shader scene uniform buffer block
-	uniform_buffers.scene = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                            sizeof(UboScene),
-	                                                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-	                                                            VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.scene = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                             sizeof(UboScene),
+	                                                             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+	                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	// Vertex shader cube model uniform buffer blocks
 	for (auto &cube : cubes)
 	{
-		cube.uniform_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-		                                                          sizeof(glm::mat4),
-		                                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+		cube.uniform_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+		                                                           sizeof(glm::mat4),
+		                                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		                                                           VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
 	update_uniform_buffers();
@@ -425,6 +425,12 @@ bool DescriptorBufferBasic::prepare(const vkb::ApplicationOptions &options)
 	device_properties.pNext            = &descriptor_buffer_properties;
 	vkGetPhysicalDeviceProperties2KHR(get_device().get_gpu().get_handle(), &device_properties);
 
+	if (descriptor_buffer_properties.maxResourceDescriptorBufferBindings < 2)
+	{
+		LOGE("VkPhysicalDeviceDescriptorBufferPropertiesEXT.maxResourceDescriptorBufferBindings={}. Sample requires at least 2 to run.", descriptor_buffer_properties.maxResourceDescriptorBufferBindings);
+		return false;
+	}
+
 	/*
 	    End of extension specific functions
 	*/
@@ -470,7 +476,7 @@ void DescriptorBufferBasic::on_update_ui_overlay(vkb::Drawer &drawer)
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_descriptor_buffer_basic()
+std::unique_ptr<vkb::VulkanSampleC> create_descriptor_buffer_basic()
 {
 	return std::make_unique<DescriptorBufferBasic>();
 }

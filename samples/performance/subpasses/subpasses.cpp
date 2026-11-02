@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -52,7 +52,7 @@ Subpasses::Subpasses()
 	config.insert<vkb::IntSetting>(3, configs[Config::GBufferSize].value, 1);
 }
 
-std::unique_ptr<vkb::RenderTarget> Subpasses::create_render_target(vkb::core::Image &&swapchain_image)
+std::unique_ptr<vkb::rendering::RenderTargetC> Subpasses::create_render_target(vkb::core::Image &&swapchain_image)
 {
 	auto &device = swapchain_image.get_device();
 	auto &extent = swapchain_image.get_extent();
@@ -95,7 +95,7 @@ std::unique_ptr<vkb::RenderTarget> Subpasses::create_render_target(vkb::core::Im
 	// Attachment 3
 	images.push_back(std::move(normal_image));
 
-	return std::make_unique<vkb::RenderTarget>(std::move(images));
+	return std::make_unique<vkb::rendering::RenderTargetC>(std::move(images));
 }
 
 void Subpasses::prepare_render_context()
@@ -167,6 +167,22 @@ bool Subpasses::prepare(const vkb::ApplicationOptions &options)
 
 	return true;
 }
+
+#if defined(PLATFORM__MACOS) && TARGET_OS_IOS && TARGET_OS_SIMULATOR
+void Subpasses::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_EXT_LAYER_SETTINGS_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void Subpasses::request_layer_settings(std::vector<VkLayerSettingEXT>                    &requested_layer_settings,
+                                       vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const
+{
+	// On iOS Simulator use layer setting to disable MoltenVK's Metal argument buffers - otherwise blank display
+	vkb::VulkanSampleC::request_layer_settings(requested_layer_settings, scb);
+	requested_layer_settings.push_back({"MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", VK_LAYER_SETTING_TYPE_INT32_EXT, 1, &scb.add_chain_data<int32_t>(0)});
+}
+#endif
 
 void Subpasses::update(float delta_time)
 {
@@ -281,30 +297,31 @@ void Subpasses::draw_gui()
 	    /* lines = */ vkb::to_u32(lines));
 }
 
-std::unique_ptr<vkb::RenderPipeline> Subpasses::create_one_renderpass_two_subpasses()
+std::unique_ptr<vkb::rendering::RenderPipelineC> Subpasses::create_one_renderpass_two_subpasses()
 {
 	// Geometry subpass
-	auto geometry_vs   = vkb::ShaderSource{"deferred/geometry.vert"};
-	auto geometry_fs   = vkb::ShaderSource{"deferred/geometry.frag"};
-	auto scene_subpass = std::make_unique<vkb::GeometrySubpass>(get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
+	auto geometry_vs   = vkb::core::ShaderSource{"deferred/geometry.vert.spv"};
+	auto geometry_fs   = vkb::core::ShaderSource{"deferred/geometry.frag.spv"};
+	auto scene_subpass = std::make_unique<vkb::rendering::subpasses::GeometrySubpassC>(
+	    get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
 
 	// Outputs are depth, albedo, and normal
 	scene_subpass->set_output_attachments({1, 2, 3});
 
 	// Lighting subpass
-	auto lighting_vs      = vkb::ShaderSource{"deferred/lighting.vert"};
-	auto lighting_fs      = vkb::ShaderSource{"deferred/lighting.frag"};
+	auto lighting_vs      = vkb::core::ShaderSource{"deferred/lighting.vert.spv"};
+	auto lighting_fs      = vkb::core::ShaderSource{"deferred/lighting.frag.spv"};
 	auto lighting_subpass = std::make_unique<vkb::LightingSubpass>(get_render_context(), std::move(lighting_vs), std::move(lighting_fs), *camera, get_scene());
 
 	// Inputs are depth, albedo, and normal from the geometry subpass
 	lighting_subpass->set_input_attachments({1, 2, 3});
 
 	// Create subpasses pipeline
-	std::vector<std::unique_ptr<vkb::Subpass>> subpasses{};
+	std::vector<std::unique_ptr<vkb::rendering::SubpassC>> subpasses{};
 	subpasses.push_back(std::move(scene_subpass));
 	subpasses.push_back(std::move(lighting_subpass));
 
-	auto render_pipeline = std::make_unique<vkb::RenderPipeline>(std::move(subpasses));
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>(std::move(subpasses));
 
 	render_pipeline->set_load_store(vkb::gbuffer::get_clear_all_store_swapchain());
 
@@ -313,21 +330,22 @@ std::unique_ptr<vkb::RenderPipeline> Subpasses::create_one_renderpass_two_subpas
 	return render_pipeline;
 }
 
-std::unique_ptr<vkb::RenderPipeline> Subpasses::create_geometry_renderpass()
+std::unique_ptr<vkb::rendering::RenderPipelineC> Subpasses::create_geometry_renderpass()
 {
 	// Geometry subpass
-	auto geometry_vs   = vkb::ShaderSource{"deferred/geometry.vert"};
-	auto geometry_fs   = vkb::ShaderSource{"deferred/geometry.frag"};
-	auto scene_subpass = std::make_unique<vkb::GeometrySubpass>(get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
+	auto geometry_vs   = vkb::core::ShaderSource{"deferred/geometry.vert.spv"};
+	auto geometry_fs   = vkb::core::ShaderSource{"deferred/geometry.frag.spv"};
+	auto scene_subpass = std::make_unique<vkb::rendering::subpasses::GeometrySubpassC>(
+	    get_render_context(), std::move(geometry_vs), std::move(geometry_fs), get_scene(), *camera);
 
 	// Outputs are depth, albedo, and normal
 	scene_subpass->set_output_attachments({1, 2, 3});
 
 	// Create geometry pipeline
-	std::vector<std::unique_ptr<vkb::Subpass>> scene_subpasses{};
+	std::vector<std::unique_ptr<vkb::rendering::SubpassC>> scene_subpasses{};
 	scene_subpasses.push_back(std::move(scene_subpass));
 
-	auto geometry_render_pipeline = std::make_unique<vkb::RenderPipeline>(std::move(scene_subpasses));
+	auto geometry_render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>(std::move(scene_subpasses));
 
 	geometry_render_pipeline->set_load_store(vkb::gbuffer::get_clear_store_all());
 
@@ -336,20 +354,20 @@ std::unique_ptr<vkb::RenderPipeline> Subpasses::create_geometry_renderpass()
 	return geometry_render_pipeline;
 }
 
-std::unique_ptr<vkb::RenderPipeline> Subpasses::create_lighting_renderpass()
+std::unique_ptr<vkb::rendering::RenderPipelineC> Subpasses::create_lighting_renderpass()
 {
 	// Lighting subpass
-	auto lighting_vs      = vkb::ShaderSource{"deferred/lighting.vert"};
-	auto lighting_fs      = vkb::ShaderSource{"deferred/lighting.frag"};
+	auto lighting_vs      = vkb::core::ShaderSource{"deferred/lighting.vert.spv"};
+	auto lighting_fs      = vkb::core::ShaderSource{"deferred/lighting.frag.spv"};
 	auto lighting_subpass = std::make_unique<vkb::LightingSubpass>(get_render_context(), std::move(lighting_vs), std::move(lighting_fs), *camera, get_scene());
 
 	// Inputs are depth, albedo, and normal from the geometry subpass
 	lighting_subpass->set_input_attachments({1, 2, 3});
 	// Create lighting pipeline
-	std::vector<std::unique_ptr<vkb::Subpass>> lighting_subpasses{};
+	std::vector<std::unique_ptr<vkb::rendering::SubpassC>> lighting_subpasses{};
 	lighting_subpasses.push_back(std::move(lighting_subpass));
 
-	auto lighting_render_pipeline = std::make_unique<vkb::RenderPipeline>(std::move(lighting_subpasses));
+	auto lighting_render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>(std::move(lighting_subpasses));
 
 	lighting_render_pipeline->set_load_store(vkb::gbuffer::get_load_all_store_swapchain());
 
@@ -358,7 +376,10 @@ std::unique_ptr<vkb::RenderPipeline> Subpasses::create_lighting_renderpass()
 	return lighting_render_pipeline;
 }
 
-void draw_pipeline(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target, vkb::RenderPipeline &render_pipeline, vkb::Gui *gui = nullptr)
+void draw_pipeline(vkb::core::CommandBufferC       &command_buffer,
+                   vkb::rendering::RenderTargetC   &render_target,
+                   vkb::rendering::RenderPipelineC &render_pipeline,
+                   vkb::GuiC                       *gui = nullptr)
 {
 	auto &extent = render_target.get_extent();
 
@@ -383,12 +404,12 @@ void draw_pipeline(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render
 	command_buffer.end_render_pass();
 }
 
-void Subpasses::draw_subpasses(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target)
+void Subpasses::draw_subpasses(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)
 {
 	draw_pipeline(command_buffer, render_target, *render_pipeline, &get_gui());
 }
 
-void Subpasses::draw_renderpasses(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target)
+void Subpasses::draw_renderpasses(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)
 {
 	// First render pass (no gui)
 	draw_pipeline(command_buffer, render_target, *geometry_render_pipeline);
@@ -400,13 +421,15 @@ void Subpasses::draw_renderpasses(vkb::CommandBuffer &command_buffer, vkb::Rende
 
 		vkb::ImageMemoryBarrier barrier;
 
-		if (i == 1)
+		if (vkb::is_depth_format(view.get_format()))
 		{
 			barrier.old_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			barrier.new_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
 			barrier.src_stage_mask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+			barrier.dst_stage_mask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			barrier.src_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dst_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 		}
 		else
 		{
@@ -414,20 +437,19 @@ void Subpasses::draw_renderpasses(vkb::CommandBuffer &command_buffer, vkb::Rende
 			barrier.new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 			barrier.src_stage_mask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			barrier.dst_stage_mask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 			barrier.src_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barrier.dst_access_mask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 		}
 
-		barrier.dst_stage_mask  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		barrier.dst_access_mask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-
-		command_buffer.image_memory_barrier(view, barrier);
+		command_buffer.image_memory_barrier(render_target, i, barrier);
 	}
 
 	// Second render pass
 	draw_pipeline(command_buffer, render_target, *lighting_render_pipeline, &get_gui());
 }
 
-void Subpasses::draw_renderpass(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target)
+void Subpasses::draw_renderpass(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target)
 {
 	if (configs[Config::RenderTechnique].value == 0)
 	{
@@ -441,7 +463,7 @@ void Subpasses::draw_renderpass(vkb::CommandBuffer &command_buffer, vkb::RenderT
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_subpasses()
+std::unique_ptr<vkb::VulkanSampleC> create_subpasses()
 {
 	return std::make_unique<Subpasses>();
 }

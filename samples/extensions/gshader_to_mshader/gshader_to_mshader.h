@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,7 +18,6 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
-#include "glsl_compiler.h"
 #include "gltf_loader.h"
 
 class GshaderToMshader : public ApiVulkanSample
@@ -32,6 +31,7 @@ class GshaderToMshader : public ApiVulkanSample
 		glm::mat4 model;
 		glm::mat4 view;
 		glm::mat4 proj;
+		glm::mat4 normal;
 	};
 
 	std::array<UBOVS, 3> ubos;
@@ -45,10 +45,10 @@ class GshaderToMshader : public ApiVulkanSample
 	std::unique_ptr<vkb::sg::SubMesh> object;
 	std::unique_ptr<vkb::sg::SubMesh> storage_buffer_object;
 
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_vs;
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_gs;
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_ms;
-	std::unique_ptr<vkb::core::Buffer> meshlet_buffer;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_vs;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_gs;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_ms;
+	std::unique_ptr<vkb::core::BufferC> meshlet_buffer;
 
 	VkDescriptorSet       descriptor_set{VK_NULL_HANDLE};
 	VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
@@ -56,7 +56,8 @@ class GshaderToMshader : public ApiVulkanSample
 	GshaderToMshader();
 	~GshaderToMshader();
 
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	virtual void render(float delta_time) override;
 	virtual void build_command_buffers() override;
 	virtual bool prepare(const vkb::ApplicationOptions &options) override;

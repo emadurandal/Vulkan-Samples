@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2023, Sascha Willems
+/* Copyright (c) 2021-2025, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -42,11 +42,11 @@ class SeparateImageSampler : public ApiVulkanSample
 	int32_t                        selected_sampler = 0;
 	std::array<VkDescriptorSet, 2> sampler_descriptor_sets{};
 
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;
-	std::unique_ptr<vkb::core::Buffer> index_buffer;
-	uint32_t                           index_count;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC> index_buffer;
+	uint32_t                            index_count;
 
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_vs;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_vs;
 
 	struct
 	{
@@ -64,7 +64,7 @@ class SeparateImageSampler : public ApiVulkanSample
 
 	SeparateImageSampler();
 	~SeparateImageSampler() override;
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         setup_samplers();
 	void         load_assets();

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,7 +26,7 @@ namespace core
 /**
  * @brief Represents a Vulkan Sampler, using Vulkan-Hpp
  */
-class HPPSampler : public vkb::core::VulkanResource<vkb::BindingType::Cpp, vk::Sampler>
+class HPPSampler : public vkb::core::VulkanResourceCpp<vk::Sampler>
 {
   public:
 	/**
@@ -34,7 +34,7 @@ class HPPSampler : public vkb::core::VulkanResource<vkb::BindingType::Cpp, vk::S
 	 * @param device The device to use
 	 * @param info Creation details
 	 */
-	HPPSampler(vkb::core::HPPDevice &device, const vk::SamplerCreateInfo &info);
+	HPPSampler(vkb::core::DeviceCpp &device, const vk::SamplerCreateInfo &info);
 
 	HPPSampler(const HPPSampler &) = delete;
 

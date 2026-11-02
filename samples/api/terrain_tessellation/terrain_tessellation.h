@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2023, Sascha Willems
+/* Copyright (c) 2019-2025, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -49,15 +49,15 @@ class TerrainTessellation : public ApiVulkanSample
 
 	struct Terrain
 	{
-		std::unique_ptr<vkb::core::Buffer> vertices;
-		std::unique_ptr<vkb::core::Buffer> indices;
-		uint32_t                           index_count;
+		std::unique_ptr<vkb::core::BufferC> vertices;
+		std::unique_ptr<vkb::core::BufferC> indices;
+		uint32_t                            index_count;
 	} terrain;
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> terrain_tessellation;
-		std::unique_ptr<vkb::core::Buffer> skysphere_vertex;
+		std::unique_ptr<vkb::core::BufferC> terrain_tessellation;
+		std::unique_ptr<vkb::core::BufferC> skysphere_vertex;
 	} uniform_buffers;
 
 	// Shared values for tessellation control and evaluation stages
@@ -114,7 +114,7 @@ class TerrainTessellation : public ApiVulkanSample
 
 	TerrainTessellation();
 	~TerrainTessellation();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         setup_query_result_buffer();
 	void         get_query_results();
 	void         load_assets();

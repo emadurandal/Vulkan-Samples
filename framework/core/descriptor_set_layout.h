@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2020, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -19,14 +19,18 @@
 
 #include "common/helpers.h"
 #include "common/vk_common.h"
+#include "core/shader_module.h"
 
 namespace vkb
 {
 class DescriptorPool;
-class Device;
-class ShaderModule;
 
-struct ShaderResource;
+namespace core
+{
+template <vkb::BindingType bindingType>
+class Device;
+using DeviceC = Device<vkb::BindingType::C>;
+}        // namespace core
 
 /**
  * @brief Caches DescriptorSet objects for the shader's set index.
@@ -42,10 +46,10 @@ class DescriptorSetLayout
 	 * @param shader_modules The shader modules this set layout will be used for
 	 * @param resource_set A grouping of shader resources belonging to the same set
 	 */
-	DescriptorSetLayout(Device &                           device,
-	                    const uint32_t                     set_index,
-	                    const std::vector<ShaderModule *> &shader_modules,
-	                    const std::vector<ShaderResource> &resource_set);
+	DescriptorSetLayout(vkb::core::DeviceC                            &device,
+	                    const uint32_t                                 set_index,
+	                    const std::vector<vkb::core::ShaderModuleC *> &shader_modules,
+	                    const std::vector<vkb::core::ShaderResourceC> &resource_set);
 
 	DescriptorSetLayout(const DescriptorSetLayout &) = delete;
 
@@ -71,10 +75,10 @@ class DescriptorSetLayout
 
 	VkDescriptorBindingFlagsEXT get_layout_binding_flag(const uint32_t binding_index) const;
 
-	const std::vector<ShaderModule *> &get_shader_modules() const;
+	const std::vector<vkb::core::ShaderModuleC *> &get_shader_modules() const;
 
   private:
-	Device &device;
+	vkb::core::DeviceC &device;
 
 	VkDescriptorSetLayout handle{VK_NULL_HANDLE};
 
@@ -90,6 +94,6 @@ class DescriptorSetLayout
 
 	std::unordered_map<std::string, uint32_t> resources_lookup;
 
-	std::vector<ShaderModule *> shader_modules;
+	std::vector<vkb::core::ShaderModuleC *> shader_modules;
 };
 }        // namespace vkb

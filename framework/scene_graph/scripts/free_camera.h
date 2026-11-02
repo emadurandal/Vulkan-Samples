@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,8 +23,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "common/error.h"
-
 #include "common/glm_common.h"
 
 #include "scene_graph/script.h"
@@ -48,7 +46,7 @@ class FreeCamera : public NodeScript
 
 	static const uint32_t TRANSLATION_MOVE_SPEED;
 
-	FreeCamera(Node &node);
+	FreeCamera(vkb::scene_graph::NodeC &node);
 
 	virtual ~FreeCamera() = default;
 

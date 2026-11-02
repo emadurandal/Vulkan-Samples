@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Sascha Willems
+/* Copyright (c) 2023-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -100,24 +100,6 @@ OpenCLInterop::OpenCLInterop()
 {
 	zoom  = -3.5f;
 	title = "Interoperability with OpenCL";
-
-	// To use external memory, semaphores and fences, we need to enable several extensions, both on the device as well as the instance
-	add_device_extension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME);
-	// Some of the extensions are platform dependent
-#ifdef _WIN32
-	add_device_extension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_FENCE_WIN32_EXTENSION_NAME);
-#else
-	add_device_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
-#endif
-	add_instance_extension(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
-	add_instance_extension(VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME);
-	add_instance_extension(VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME);
 }
 
 OpenCLInterop::~OpenCLInterop()
@@ -218,6 +200,35 @@ void OpenCLInterop::render(float delta_time)
 	CL_CHECK(clEnqueueSignalSemaphoresKHR(opencl_objects.command_queue, 1, &opencl_objects.cl_update_vk_semaphore, nullptr, 0, nullptr, nullptr));
 }
 
+void OpenCLInterop::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// To use external memory, semaphores and fences, we need to enable several extensions, both on the device as well as the instance
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_FENCE_EXTENSION_NAME]     = vkb::RequestMode::Required;
+
+	// Some of the extensions are platform dependent
+#ifdef _WIN32
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_FENCE_WIN32_EXTENSION_NAME]     = vkb::RequestMode::Required;
+#else
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME]     = vkb::RequestMode::Required;
+#endif
+}
+
+void OpenCLInterop::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	ApiVulkanSample::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME]     = vkb::RequestMode::Required;
+}
+
 void OpenCLInterop::view_changed()
 {
 	update_uniform_buffers();
@@ -289,16 +300,16 @@ void OpenCLInterop::generate_quad()
 	// Create buffers
 	// For the sake of simplicity we won't stage the vertex data to the gpu memory
 	// Vertex buffer
-	vertex_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                    vertex_buffer_size,
-	                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-	                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+	vertex_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                     vertex_buffer_size,
+	                                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+	                                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
 	vertex_buffer->update(vertices.data(), vertex_buffer_size);
 
-	index_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                   index_buffer_size,
-	                                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-	                                                   VMA_MEMORY_USAGE_CPU_TO_GPU);
+	index_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                    index_buffer_size,
+	                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+	                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	index_buffer->update(indices.data(), index_buffer_size);
 }
@@ -406,8 +417,8 @@ void OpenCLInterop::prepare_pipelines()
 	// Load shaders
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
 
-	shader_stages[0] = load_shader("open_cl_interop", "texture_display.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("open_cl_interop", "texture_display.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("open_cl_interop", "texture_display.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("open_cl_interop", "texture_display.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Vertex bindings and attributes
 	const std::vector<VkVertexInputBindingDescription> vertex_input_bindings = {
@@ -444,10 +455,10 @@ void OpenCLInterop::prepare_pipelines()
 void OpenCLInterop::prepare_uniform_buffers()
 {
 	// Vertex shader uniform buffer block
-	uniform_buffer_vs = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                        sizeof(ubo_vs),
-	                                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer_vs = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                         sizeof(ubo_vs),
+	                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -567,7 +578,7 @@ void OpenCLInterop::prepare_shared_image()
 	VkMemoryAllocateInfo memory_allocate_info = vkb::initializers::memory_allocate_info();
 	memory_allocate_info.pNext                = &export_memory_allocate_info;
 	memory_allocate_info.allocationSize       = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex      = get_device().get_memory_type(memory_requirements.memoryTypeBits, 0);
+	memory_allocate_info.memoryTypeIndex      = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, 0);
 
 	VK_CHECK(vkAllocateMemory(device_handle, &memory_allocate_info, nullptr, &shared_image.memory));
 	VK_CHECK(vkBindImageMemory(device_handle, shared_image.image, shared_image.memory, 0));
@@ -799,7 +810,7 @@ void OpenCLInterop::prepare_opencl_resources()
 		while (std::getline(extension_stream, extension, ' '))
 		{
 			// Remove trailing zeroes from all extensions (which otherwise may make support checks fail)
-			extension.erase(std::find(extension.begin(), extension.end(), '\0'), extension.end());
+			extension.erase(std::ranges::find(extension, '\0'), extension.end());
 			available_extensions.push_back(extension);
 		}
 
@@ -807,7 +818,7 @@ void OpenCLInterop::prepare_opencl_resources()
 
 		for (auto &extension : required_extensions)
 		{
-			if (std::find(available_extensions.begin(), available_extensions.end(), extension) == available_extensions.end())
+			if (std::ranges::find(available_extensions, extension) == available_extensions.end())
 			{
 				extensions_present = false;
 				break;
@@ -857,8 +868,8 @@ void OpenCLInterop::prepare_opencl_resources()
 
 	if ((selected_platform_id == nullptr) || (selected_device_id == nullptr))
 	{
-		const std::string message{"Could not find an OpenCL platform + device that matches the required extensions and also matches the Vulkan device UUID "};
-		LOGE(message);
+		const std::string message{"Could not find an OpenCL platform + device that matches the required extensions and also matches the Vulkan device UUID"};
+		LOGE("{}", message);
 		throw std::runtime_error(message);
 	}
 
@@ -872,7 +883,7 @@ void OpenCLInterop::prepare_opencl_resources()
 	opencl_objects.command_queue = clCreateCommandQueue(opencl_objects.context, opencl_objects.device_id, 0, &cl_result);
 	CL_CHECK(cl_result);
 
-	std::string kernel_source      = vkb::fs::read_shader("open_cl_interop/procedural_texture.cl");
+	std::string kernel_source      = vkb::fs::read_text_file("open_cl_interop/procedural_texture.cl");
 	auto        kernel_source_data = kernel_source.c_str();
 	size_t      kernel_source_size = kernel_source.size();
 
@@ -908,7 +919,7 @@ bool OpenCLInterop::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_open_cl_interop()
+std::unique_ptr<vkb::VulkanSampleC> create_open_cl_interop()
 {
 	return std::make_unique<OpenCLInterop>();
 }

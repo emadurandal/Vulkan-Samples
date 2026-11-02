@@ -1,7 +1,9 @@
 assets/scenes
+cache
 build
 .vs
 .vscode
+.idea
 imgui.ini
 doxygen/
 tests/system_test/artifacts
@@ -14,3 +16,7 @@ tags
 *~
 .*.sw*
 .sw*
+.tracy
+
+# macOS
+.DS_Store

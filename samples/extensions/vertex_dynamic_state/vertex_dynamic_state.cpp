@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Mobica Limited
+/* Copyright (c) 2022-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,9 +20,6 @@
 VertexDynamicState::VertexDynamicState()
 {
 	title = "Vertex Dynamic State";
-
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
 }
 
 VertexDynamicState::~VertexDynamicState()
@@ -121,7 +118,7 @@ void VertexDynamicState::render(float delta_time)
  */
 void VertexDynamicState::prepare_uniform_buffers()
 {
-	ubo = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(ubo_vs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	ubo = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(ubo_vs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -215,8 +212,8 @@ void VertexDynamicState::create_pipeline()
 	        0);
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
-	shader_stages[0] = load_shader("vertex_dynamic_state", "gbuffer.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("vertex_dynamic_state", "gbuffer.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("vertex_dynamic_state", "gbuffer.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("vertex_dynamic_state", "gbuffer.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	/* Create graphics pipeline for dynamic rendering */
 	VkFormat color_rendering_format = get_render_context().get_format();
@@ -445,12 +442,18 @@ void VertexDynamicState::create_descriptor_sets()
 	vkUpdateDescriptorSets(get_device().get_handle(), static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
 }
 
-void VertexDynamicState::request_gpu_features(vkb::PhysicalDevice &gpu)
+void VertexDynamicState::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void VertexDynamicState::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	/* Enable extension features required by this sample
 	   These are passed to device creation via a pNext structure chain */
-	auto &requested_vertex_input_features                   = gpu.request_extension_features<VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT);
-	requested_vertex_input_features.vertexInputDynamicState = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT, vertexInputDynamicState);
 
 	if (gpu.get_features().samplerAnisotropy)
 	{
@@ -532,18 +535,18 @@ void VertexDynamicState::model_data_creation()
 	                                          3, 7, 6,
 	                                          6, 2, 3};
 
-	vkb::core::Buffer vertex_staging = vkb::core::Buffer::create_staging_buffer(get_device(), vertices);
-	vkb::core::Buffer index_staging  = vkb::core::Buffer::create_staging_buffer(get_device(), indices);
+	vkb::core::BufferC vertex_staging = vkb::core::BufferC::create_staging_buffer(get_device(), vertices);
+	vkb::core::BufferC index_staging  = vkb::core::BufferC::create_staging_buffer(get_device(), indices);
 
-	cube.vertices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                    vertex_buffer_size,
-	                                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	cube.vertices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                     vertex_buffer_size,
+	                                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	                                                     VMA_MEMORY_USAGE_GPU_ONLY);
+
+	cube.indices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                    index_buffer_size,
+	                                                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 	                                                    VMA_MEMORY_USAGE_GPU_ONLY);
-
-	cube.indices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                   index_buffer_size,
-	                                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-	                                                   VMA_MEMORY_USAGE_GPU_ONLY);
 
 	/* Copy from staging buffers */
 	VkCommandBuffer copy_command = get_device().create_command_buffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -569,7 +572,7 @@ void VertexDynamicState::model_data_creation()
 	get_device().flush_command_buffer(copy_command, queue, true);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_vertex_dynamic_state()
+std::unique_ptr<vkb::VulkanSampleC> create_vertex_dynamic_state()
 {
 	return std::make_unique<VertexDynamicState>();
 }

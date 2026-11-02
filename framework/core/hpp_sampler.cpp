@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,15 +16,14 @@
  */
 
 #include "hpp_sampler.h"
-
-#include "hpp_device.h"
+#include "core/device.h"
 
 namespace vkb
 {
 namespace core
 {
-HPPSampler::HPPSampler(vkb::core::HPPDevice &device, const vk::SamplerCreateInfo &info) :
-    vkb::core::VulkanResource<vkb::BindingType::Cpp, vk::Sampler>{device.get_handle().createSampler(info), &device}
+HPPSampler::HPPSampler(vkb::core::DeviceCpp &device, const vk::SamplerCreateInfo &info) :
+    vkb::core::VulkanResourceCpp<vk::Sampler>{device.get_handle().createSampler(info), &device}
 {}
 
 HPPSampler::HPPSampler(HPPSampler &&other) :

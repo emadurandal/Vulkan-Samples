@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, Thomas Atkinson
+# Copyright (c) 2023-2025, Thomas Atkinson
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -24,21 +24,20 @@ vkb__register_component(
         include/core/util/error.hpp
         include/core/util/hash.hpp
         include/core/util/logging.hpp
+        include/core/util/profiling.hpp
     SRC
         src/strings.cpp
         src/logging.cpp
+        src/profiling.cpp
     LINK_LIBS
         spdlog::spdlog
 )
 
-vkb__register_tests(
-    COMPONENT core
-    NAME utils
-    SRC
-        tests/strings.test.cpp
-    LINK_LIBS
-        vkb__core
-)
+if (VKB_PROFILING)
+    target_link_libraries(vkb__core PUBLIC TracyClient)
+    target_compile_definitions(vkb__core PUBLIC TRACY_ENABLE)
+endif()
+
 
 if(ANDROID)
     target_compile_definitions(vkb__core PUBLIC VK_USE_PLATFORM_ANDROID_KHR PLATFORM__ANDROID)

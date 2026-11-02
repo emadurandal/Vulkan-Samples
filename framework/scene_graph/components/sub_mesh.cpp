@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2021, Arm Limited and Contributors
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,6 +28,31 @@ SubMesh::SubMesh(const std::string &name) :
     Component{name}
 {}
 
+vkb::core::BufferC const &SubMesh::get_index_buffer() const
+{
+	return *index_buffer;
+}
+
+uint32_t SubMesh::get_index_offset() const
+{
+	return index_offset;
+}
+
+VkIndexType SubMesh::get_index_type() const
+{
+	return index_type;
+}
+
+uint32_t SubMesh::get_vertex_indices() const
+{
+	return vertex_indices;
+}
+
+uint32_t SubMesh::get_vertices_count() const
+{
+	return vertices_count;
+}
+
 std::type_index SubMesh::get_type()
 {
 	return typeid(SubMesh);
@@ -36,8 +61,6 @@ std::type_index SubMesh::get_type()
 void SubMesh::set_attribute(const std::string &attribute_name, const VertexAttribute &attribute)
 {
 	vertex_attributes[attribute_name] = attribute;
-
-	compute_shader_variant();
 }
 
 bool SubMesh::get_attribute(const std::string &attribute_name, VertexAttribute &attribute) const
@@ -57,8 +80,6 @@ bool SubMesh::get_attribute(const std::string &attribute_name, VertexAttribute &
 void SubMesh::set_material(const Material &new_material)
 {
 	material = &new_material;
-
-	compute_shader_variant();
 }
 
 const Material *SubMesh::get_material() const
@@ -66,35 +87,12 @@ const Material *SubMesh::get_material() const
 	return material;
 }
 
-const ShaderVariant &SubMesh::get_shader_variant() const
+const vkb::core::ShaderVariant &SubMesh::get_shader_variant() const
 {
 	return shader_variant;
 }
 
-void SubMesh::compute_shader_variant()
-{
-	shader_variant.clear();
-
-	if (material != nullptr)
-	{
-		for (auto &texture : material->textures)
-		{
-			std::string tex_name = texture.first;
-			std::transform(tex_name.begin(), tex_name.end(), tex_name.begin(), ::toupper);
-
-			shader_variant.add_define("HAS_" + tex_name);
-		}
-	}
-
-	for (auto &attribute : vertex_attributes)
-	{
-		std::string attrib_name = attribute.first;
-		std::transform(attrib_name.begin(), attrib_name.end(), attrib_name.begin(), ::toupper);
-		shader_variant.add_define("HAS_" + attrib_name);
-	}
-}
-
-ShaderVariant &SubMesh::get_mut_shader_variant()
+vkb::core::ShaderVariant &SubMesh::get_mut_shader_variant()
 {
 	return shader_variant;
 }

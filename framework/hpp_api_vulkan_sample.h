@@ -1,4 +1,5 @@
-/* Copyright (c) 2021-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,8 +19,6 @@
 #pragma once
 
 #include <camera.h>
-#include <common/hpp_error.h>
-#include <hpp_gui.h>
 #include <scene_graph/components/hpp_image.h>
 #include <scene_graph/components/hpp_sub_mesh.h>
 
@@ -53,6 +52,7 @@ struct HPPVertex
 	glm::vec2 uv;
 	glm::vec4 joint0;
 	glm::vec4 weight0;
+	glm::vec3 color;
 };
 
 /**
@@ -60,7 +60,7 @@ struct HPPVertex
  *
  * See vkb::ApiVulkanSample for documentation
  */
-class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
+class HPPApiVulkanSample : public vkb::VulkanSampleCpp
 {
   public:
 	HPPApiVulkanSample() = default;
@@ -109,6 +109,12 @@ class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
 
 	// Global render pass for frame buffer writes
 	vk::RenderPass render_pass;
+
+	// Returns true if using dynamic rendering
+	bool uses_dynamic_rendering() const
+	{
+		return render_pass == VK_NULL_HANDLE;
+	}
 
 	// List of available frame buffers (same as number of swap chain images)
 	std::vector<vk::Framebuffer> framebuffers;
@@ -200,8 +206,11 @@ class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
 	 * @brief Loads in a single model from a GLTF file
 	 * @param file The filename of the model to load
 	 * @param index The index of the model to load from the GLTF file (default: 0)
+	 * @param storage_buffer Set true to store model in SSBO
+	 * @param additional_buffer_usage_flags Additional buffer usage flags to be applied to vertex and index buffers
 	 */
-	std::unique_ptr<vkb::scene_graph::components::HPPSubMesh> load_model(const std::string &file, uint32_t index = 0);
+	std::unique_ptr<vkb::scene_graph::components::HPPSubMesh> load_model(
+	    const std::string &file, uint32_t index = 0, bool storage_buffer = false, vk::BufferUsageFlags additional_buffer_usage_flags = {});
 
 	/**
 	 * @brief Records the necessary drawing commands to a command buffer
@@ -300,9 +309,8 @@ class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
 	 * @brief Load a SPIR-V shader
 	 * @param file The file location of the shader relative to the shaders folder
 	 * @param stage The shader stage
-	 * @param src_language The shader language
 	 */
-	vk::PipelineShaderStageCreateInfo load_shader(const std::string &file, vk::ShaderStageFlagBits stage, vkb::ShaderSourceLanguage src_language = vkb::ShaderSourceLanguage::GLSL);
+	vk::PipelineShaderStageCreateInfo load_shader(const std::string &file, vk::ShaderStageFlagBits stage);
 
 	/**
 	 * @brief Load a SPIR-V shader based on current shader language selection
@@ -326,6 +334,16 @@ class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
 	void draw_ui(const vk::CommandBuffer command_buffer);
 
 	/**
+	 * @brief Draw UI for dynamic rendering mode
+	 * @param command_buffer A valid command buffer (after ending your main rendering pass)
+	 * @param swapchain_image_index The swapchain image index to render onto
+	 *
+	 * This method starts its own rendering pass, draws the UI, and ends the pass.
+	 * Call this after ending your main rendering pass (vkCmdEndRenderingKHR).
+	 */
+	void draw_ui(const vk::CommandBuffer command_buffer, uint32_t swapchain_image_index);
+
+	/**
 	 * @brief Prepare the frame for workload submission, acquires the next image from the swap chain and
 	 *        sets the default wait and signal semaphores
 	 */
@@ -346,6 +364,15 @@ class HPPApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::Cpp>
 	 * @brief Initializes the UI. Can be overridden to customize the way it is displayed.
 	 */
 	virtual void prepare_gui();
+
+	/**
+	 * @brief Returns the subpass index used for GUI rendering (render pass path only).
+	 *        Override in samples that use a multi-subpass render pass with the GUI in a later subpass.
+	 */
+	virtual uint32_t get_gui_subpass() const
+	{
+		return 0;
+	}
 
   private:
 	/** brief Indicates that the view (position, rotation) has changed and buffers containing camera matrices need to be updated */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,10 +20,6 @@
 PatchControlPoints::PatchControlPoints()
 {
 	title = "Patch Control Points";
-
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
 }
 
 PatchControlPoints::~PatchControlPoints()
@@ -118,18 +114,18 @@ void PatchControlPoints::render(float delta_time)
  */
 void PatchControlPoints::prepare_uniform_buffers()
 {
-	uniform_buffers.common               = std::make_unique<vkb::core::Buffer>(get_device(),
-                                                                 sizeof(ubo_common),
-                                                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                                 VMA_MEMORY_USAGE_CPU_TO_GPU);
-	uniform_buffers.dynamic_tessellation = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                                           sizeof(ubo_tess),
-	                                                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                                           VMA_MEMORY_USAGE_CPU_TO_GPU);
-	uniform_buffers.static_tessellation  = std::make_unique<vkb::core::Buffer>(get_device(),
-                                                                              sizeof(ubo_tess),
-                                                                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.common               = std::make_unique<vkb::core::BufferC>(get_device(),
+                                                                  sizeof(ubo_common),
+                                                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                  VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.dynamic_tessellation = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                            sizeof(ubo_tess),
+	                                                                            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                            VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.static_tessellation  = std::make_unique<vkb::core::BufferC>(get_device(),
+                                                                               sizeof(ubo_tess),
+                                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
 	update_uniform_buffers();
 }
 
@@ -243,10 +239,10 @@ void PatchControlPoints::create_pipelines()
 	vertex_input_state.pVertexAttributeDescriptions         = vertex_input_attributes.data();
 
 	std::array<VkPipelineShaderStageCreateInfo, 4> shader_stages{};
-	shader_stages[0] = load_shader("patch_control_points", "tess.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("patch_control_points", "tess.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
-	shader_stages[2] = load_shader("patch_control_points", "tess.tesc", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT);
-	shader_stages[3] = load_shader("patch_control_points", "tess.tese", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT);
+	shader_stages[0] = load_shader("patch_control_points", "tess.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("patch_control_points", "tess.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[2] = load_shader("patch_control_points", "tess.tesc.spv", VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT);
+	shader_stages[3] = load_shader("patch_control_points", "tess.tese.spv", VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT);
 
 	/* Use the pNext to point to the rendering create struct */
 	VkGraphicsPipelineCreateInfo graphics_create{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -543,22 +539,26 @@ void PatchControlPoints::create_descriptor_sets()
 	                       VK_NULL_HANDLE);
 }
 
+void PatchControlPoints::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME]   = vkb::RequestMode::Required;
+}
+
 /**
- * @fn void PatchControlPoints::request_gpu_features(vkb::PhysicalDevice &gpu)
+ * @fn void PatchControlPoints::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
  * @brief Enabling features related to Vulkan extensions
  */
-void PatchControlPoints::request_gpu_features(vkb::PhysicalDevice &gpu)
+void PatchControlPoints::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	/* Enable extension features required by this sample
 	   These are passed to device creation via a pNext structure chain */
-	auto &requested_extended_dynamic_state2_features =
-	    gpu.request_extension_features<VkPhysicalDeviceExtendedDynamicState2FeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT);
-	requested_extended_dynamic_state2_features.extendedDynamicState2                   = VK_TRUE;
-	requested_extended_dynamic_state2_features.extendedDynamicState2PatchControlPoints = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState2FeaturesEXT, extendedDynamicState2);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicState2FeaturesEXT, extendedDynamicState2PatchControlPoints);
 
-	auto &requested_extended_dynamic_state_feature =
-	    gpu.request_extension_features<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT);
-	requested_extended_dynamic_state_feature.extendedDynamicState = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceExtendedDynamicStateFeaturesEXT, extendedDynamicState);
 
 	// Tessellation shader support is required for this example
 	auto &requested_features = gpu.get_mutable_requested_features();
@@ -568,7 +568,7 @@ void PatchControlPoints::request_gpu_features(vkb::PhysicalDevice &gpu)
 	}
 	else
 	{
-		throw vkb::VulkanException(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support tessellation shaders!");
+		throw vkb::common::VulkanExceptionC(VK_ERROR_FEATURE_NOT_PRESENT, "Selected GPU does not support tessellation shaders!");
 	}
 
 	if (gpu.get_features().fillModeNonSolid)
@@ -603,7 +603,7 @@ void PatchControlPoints::on_update_ui_overlay(vkb::Drawer &drawer)
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_patch_control_points()
+std::unique_ptr<vkb::VulkanSampleC> create_patch_control_points()
 {
 	return std::make_unique<PatchControlPoints>();
 }

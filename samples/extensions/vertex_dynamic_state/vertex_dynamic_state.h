@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Mobica Limited
+/* Copyright (c) 2022-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -45,9 +45,9 @@ class VertexDynamicState : public ApiVulkanSample
 
 	struct Cube
 	{
-		std::unique_ptr<vkb::core::Buffer> vertices;
-		std::unique_ptr<vkb::core::Buffer> indices;
-		uint32_t                           index_count;
+		std::unique_ptr<vkb::core::BufferC> vertices;
+		std::unique_ptr<vkb::core::BufferC> indices;
+		uint32_t                            index_count;
 	} cube;
 
 	VkPipelineLayout                                   pipeline_layout{VK_NULL_HANDLE};
@@ -60,9 +60,9 @@ class VertexDynamicState : public ApiVulkanSample
 	VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
 	VkDescriptorPool      descriptor_pool{VK_NULL_HANDLE};
 
-	std::unique_ptr<vkb::sg::SubMesh>  skybox;
-	std::unique_ptr<vkb::sg::SubMesh>  object;
-	std::unique_ptr<vkb::core::Buffer> ubo;
+	std::unique_ptr<vkb::sg::SubMesh>   skybox;
+	std::unique_ptr<vkb::sg::SubMesh>   object;
+	std::unique_ptr<vkb::core::BufferC> ubo;
 
 	VertexDynamicState();
 	~VertexDynamicState();
@@ -70,7 +70,8 @@ class VertexDynamicState : public ApiVulkanSample
 	virtual void render(float delta_time) override;
 	virtual void build_command_buffers() override;
 	virtual bool prepare(const vkb::ApplicationOptions &options) override;
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 
 	void prepare_uniform_buffers();
 	void update_uniform_buffers();
@@ -86,4 +87,4 @@ class VertexDynamicState : public ApiVulkanSample
 	void draw_created_model(VkCommandBuffer commandBuffer);
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_vertex_dynamic_state();
+std::unique_ptr<vkb::VulkanSampleC> create_vertex_dynamic_state();

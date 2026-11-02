@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Holochip Corporation
+/* Copyright (c) 2023-2026, Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -21,13 +21,12 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
-#include "glsl_compiler.h"
 
 class MeshShaderCulling : public ApiVulkanSample
 {
   private:
-	int32_t                            density_level = 2;
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer{};
+	int32_t                             density_level = 2;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer{};
 
 	VkPipeline            pipeline              = VK_NULL_HANDLE;
 	VkPipelineLayout      pipeline_layout       = VK_NULL_HANDLE;
@@ -53,7 +52,8 @@ class MeshShaderCulling : public ApiVulkanSample
 	} ubo_cull{};
 	MeshShaderCulling();
 	~MeshShaderCulling() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void build_command_buffers() override;
 	void setup_descriptor_pool();
 	void setup_descriptor_set_layout();
@@ -70,4 +70,4 @@ class MeshShaderCulling : public ApiVulkanSample
 	void get_query_results();
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_mesh_shader_culling();
+std::unique_ptr<vkb::VulkanSampleC> create_mesh_shader_culling();

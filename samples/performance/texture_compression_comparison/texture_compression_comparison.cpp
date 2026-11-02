@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Holochip
+/* Copyright (c) 2021-2026, Holochip
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -169,13 +169,7 @@ const std::vector<TextureCompressionComparison::CompressedTexture_t> &TextureCom
 	                        VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,
 	                        KTX_TTF_ETC2_RGBA,
 	                        "KTX_TTF_ETC2_RGBA",
-	                        "ETC2"},
-	    CompressedTexture_t{nullptr,
-	                        VK_IMG_FORMAT_PVRTC_EXTENSION_NAME,
-	                        VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG,
-	                        KTX_TTF_PVRTC1_4_RGBA,
-	                        "KTX_TTF_PVRTC1_4_RGBA",
-	                        "PVRTC1 4"}};
+	                        "ETC2"}};
 	return formats;
 }
 
@@ -184,27 +178,14 @@ bool TextureCompressionComparison::is_texture_format_supported(const TextureComp
 	const auto device_features = get_device().get_gpu().get_features();
 
 	const bool supported_by_feature   = format.feature_ptr && device_features.*format.feature_ptr;
-	const bool supported_by_extension = strlen(format.extension_name) && get_device().is_extension_supported(format.extension_name);
+	const bool supported_by_extension = strlen(format.extension_name) && get_device().get_gpu().is_extension_supported(format.extension_name);
 	const bool supported_by_default   = format.always_supported;
 
 	return supported_by_default || supported_by_feature || supported_by_extension;
 }
 
-void TextureCompressionComparison::get_available_texture_formats()
-{
-	available_texture_formats.clear();
-
-	const auto all_formats = get_texture_formats();
-
-	// Determine which formats are supported by this device
-	std::copy_if(all_formats.cbegin(), all_formats.cend(), std::back_inserter(available_texture_formats), [this](const auto &texture_format) {
-		return is_texture_format_supported(texture_format);
-	});
-}
-
 void TextureCompressionComparison::load_assets()
 {
-	get_available_texture_formats();
 	load_scene("scenes/sponza/Sponza01.gltf");
 	if (!has_scene())
 	{
@@ -228,11 +209,11 @@ void TextureCompressionComparison::load_assets()
 
 void TextureCompressionComparison::create_subpass()
 {
-	vkb::ShaderSource vert_shader("base.vert");
-	vkb::ShaderSource frag_shader("base.frag");
-	auto              scene_sub_pass = std::make_unique<vkb::ForwardSubpass>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
+	vkb::core::ShaderSource vert_shader("base.vert.spv");
+	vkb::core::ShaderSource frag_shader("base.frag.spv");
+	auto                    scene_sub_pass = std::make_unique<vkb::rendering::subpasses::ForwardSubpassC>(get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
-	auto render_pipeline = std::make_unique<vkb::RenderPipeline>();
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineC>();
 	render_pipeline->add_subpass(std::move(scene_sub_pass));
 
 	set_render_pipeline(std::move(render_pipeline));
@@ -273,7 +254,7 @@ namespace
 class CompressedImage : public vkb::sg::Image
 {
   public:
-	CompressedImage(vkb::Device &device, const std::string &name, std::vector<vkb::sg::Mipmap> &&mipmaps, VkFormat format) :
+	CompressedImage(vkb::core::DeviceC &device, const std::string &name, std::vector<vkb::sg::Mipmap> &&mipmaps, VkFormat format) :
 	    vkb::sg::Image(name, std::vector<uint8_t>{}, std::move(mipmaps))
 	{
 		vkb::sg::Image::set_format(format);
@@ -284,7 +265,7 @@ class CompressedImage : public vkb::sg::Image
 
 std::unique_ptr<vkb::sg::Image> TextureCompressionComparison::create_image(ktxTexture2 *ktx_texture, const std::string &name)
 {
-	std::unique_ptr<vkb::core::Buffer> staging_buffer = std::make_unique<vkb::core::Buffer>(get_device(), ktx_texture->dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	std::unique_ptr<vkb::core::BufferC> staging_buffer = std::make_unique<vkb::core::BufferC>(get_device(), ktx_texture->dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	memcpy(staging_buffer->map(), ktx_texture->pData, ktx_texture->dataSize);
 
 	const auto vk_format = static_cast<VkFormat>(ktx_texture->vkFormat);
@@ -308,13 +289,13 @@ std::unique_ptr<vkb::sg::Image> TextureCompressionComparison::create_image(ktxTe
 			VkBufferImageCopy buffer_image_copy = {};
 			buffer_image_copy.imageSubresource  = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, mip_level, 0, 1};
 			buffer_image_copy.imageExtent       = mip_extent;
-			buffer_image_copy.bufferOffset      = offset;
+			buffer_image_copy.bufferOffset      = static_cast<uint32_t>(offset);
 			buffer_copies.push_back(buffer_image_copy);
 
 			vkb::sg::Mipmap mip_map;
 			mip_map.extent = buffer_image_copy.imageExtent;
 			mip_map.level  = mip_level;
-			mip_map.offset = offset;
+			mip_map.offset = static_cast<uint32_t>(offset);
 			mip_maps.push_back(mip_map);
 		}
 
@@ -329,25 +310,13 @@ std::unique_ptr<vkb::sg::Image> TextureCompressionComparison::create_image(ktxTe
 
 	vkb::image_layout_transition(command_buffer, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, subresource_range);
 
-	vkCmdCopyBufferToImage(command_buffer, staging_buffer->get_handle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, buffer_copies.size(), buffer_copies.data());
+	vkCmdCopyBufferToImage(command_buffer, staging_buffer->get_handle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(buffer_copies.size()), buffer_copies.data());
 
 	vkb::image_layout_transition(command_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresource_range);
 
 	get_device().flush_command_buffer(command_buffer, get_device().get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0).get_handle(), true);
 
 	return image_out;
-}
-
-std::vector<uint8_t> TextureCompressionComparison::get_raw_image(const std::string &filename)
-{
-	if (filename.empty())
-	{
-		return {};
-	}
-
-	std::ifstream                  is(filename, std::ios::binary);
-	std::istream_iterator<uint8_t> start(is), end;
-	return {start, end};
 }
 
 std::pair<std::unique_ptr<vkb::sg::Image>, TextureCompressionComparison::TextureBenchmark> TextureCompressionComparison::compress(const std::string &filename, TextureCompressionComparison::CompressedTexture_t texture_format, const std::string &name)

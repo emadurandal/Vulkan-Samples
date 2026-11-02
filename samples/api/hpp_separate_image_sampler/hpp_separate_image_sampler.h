@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -50,7 +50,7 @@ class HPPSeparateImageSampler : public HPPApiVulkanSample
 	bool prepare(const vkb::ApplicationOptions &options) override;
 
 	// from vkb::VulkanSample
-	void request_gpu_features(vkb::core::HPPPhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceCpp &gpu) override;
 
 	// from HPPApiVulkanSample
 	void build_command_buffers() override;
@@ -75,7 +75,7 @@ class HPPSeparateImageSampler : public HPPApiVulkanSample
   private:
 	vk::DescriptorSet                     base_descriptor_set;
 	vk::DescriptorSetLayout               base_descriptor_set_layout;
-	std::unique_ptr<vkb::core::HPPBuffer> index_buffer;
+	std::unique_ptr<vkb::core::BufferCpp> index_buffer;
 	uint32_t                              index_count = 0;
 	vk::Pipeline                          pipeline;
 	vk::PipelineLayout                    pipeline_layout;
@@ -85,8 +85,8 @@ class HPPSeparateImageSampler : public HPPApiVulkanSample
 	int32_t                               selected_sampler = 0;
 	HPPTexture                            texture;
 	UBO                                   ubo_vs;
-	std::unique_ptr<vkb::core::HPPBuffer> uniform_buffer_vs;
-	std::unique_ptr<vkb::core::HPPBuffer> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferCpp> uniform_buffer_vs;
+	std::unique_ptr<vkb::core::BufferCpp> vertex_buffer;
 };
 
 std::unique_ptr<vkb::Application> create_hpp_separate_image_sampler();

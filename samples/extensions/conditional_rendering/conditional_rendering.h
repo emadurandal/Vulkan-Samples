@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, Sascha Willems
+/* Copyright (c) 2023-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,15 +26,15 @@
 class ConditionalRendering : public ApiVulkanSample
 {
   public:
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer = nullptr;
-	std::unique_ptr<vkb::core::Buffer> index_buffer  = nullptr;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer = nullptr;
+	std::unique_ptr<vkb::core::BufferC> index_buffer  = nullptr;
 
-	std::unique_ptr<vkb::sg::Scene> scene;
+	std::unique_ptr<vkb::scene_graph::SceneC> scene;
 	struct SceneNode
 	{
-		std::string       name;
-		vkb::sg::Node    *node;
-		vkb::sg::SubMesh *sub_mesh;
+		std::string              name;
+		vkb::scene_graph::NodeC *node;
+		vkb::sg::SubMesh        *sub_mesh;
 	};
 	std::vector<SceneNode> linear_scene_nodes;
 
@@ -43,7 +43,7 @@ class ConditionalRendering : public ApiVulkanSample
 		glm::mat4 projection;
 		glm::mat4 view;
 	} uniform_data;
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer;
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer;
 
 	VkPipeline            pipeline;
 	VkPipelineLayout      pipeline_layout;
@@ -56,12 +56,13 @@ class ConditionalRendering : public ApiVulkanSample
 		glm::vec4 color;
 	} push_const_block;
 
-	std::vector<int32_t>               conditional_visibility_list;
-	std::unique_ptr<vkb::core::Buffer> conditional_visibility_buffer;
+	std::vector<int32_t>                conditional_visibility_list;
+	std::unique_ptr<vkb::core::BufferC> conditional_visibility_buffer;
 
 	ConditionalRendering();
 	~ConditionalRendering();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         load_assets();
 	void         setup_descriptor_pool();

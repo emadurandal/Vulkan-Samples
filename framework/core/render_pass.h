@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,14 +17,23 @@
 
 #pragma once
 
-#include "common/helpers.h"
-#include "common/vk_common.h"
 #include "core/vulkan_resource.h"
 
 namespace vkb
 {
-struct Attachment;
+namespace core
+{
+template <vkb::BindingType bindingType>
 class Device;
+using DeviceC = Device<vkb::BindingType::C>;
+}        // namespace core
+
+namespace rendering
+{
+template <vkb::BindingType bindingType>
+struct Attachment;
+using AttachmentC = Attachment<vkb::BindingType::C>;
+}        // namespace rendering
 
 struct SubpassInfo
 {
@@ -43,13 +52,13 @@ struct SubpassInfo
 	std::string debug_name;
 };
 
-class RenderPass : public vkb::core::VulkanResource<vkb::BindingType::C, VkRenderPass>
+class RenderPass : public vkb::core::VulkanResourceC<VkRenderPass>
 {
   public:
-	RenderPass(Device                           &device,
-	           const std::vector<Attachment>    &attachments,
-	           const std::vector<LoadStoreInfo> &load_store_infos,
-	           const std::vector<SubpassInfo>   &subpasses);
+	RenderPass(vkb::core::DeviceC                             &device,
+	           const std::vector<vkb::rendering::AttachmentC> &attachments,
+	           const std::vector<LoadStoreInfo>               &load_store_infos,
+	           const std::vector<SubpassInfo>                 &subpasses);
 
 	RenderPass(const RenderPass &) = delete;
 
@@ -63,13 +72,13 @@ class RenderPass : public vkb::core::VulkanResource<vkb::BindingType::C, VkRende
 
 	const uint32_t get_color_output_count(uint32_t subpass_index) const;
 
-	const VkExtent2D get_render_area_granularity() const;
+	VkExtent2D get_render_area_granularity() const;
 
   private:
 	size_t subpass_count;
 
 	template <typename T_SubpassDescription, typename T_AttachmentDescription, typename T_AttachmentReference, typename T_SubpassDependency, typename T_RenderPassCreateInfo>
-	void create_renderpass(const std::vector<Attachment> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses);
+	void create_renderpass(const std::vector<vkb::rendering::AttachmentC> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses);
 
 	std::vector<uint32_t> color_output_count;
 };

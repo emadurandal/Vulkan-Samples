@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -73,9 +73,9 @@ class PatchControlPoints : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> common;
-		std::unique_ptr<vkb::core::Buffer> static_tessellation;
-		std::unique_ptr<vkb::core::Buffer> dynamic_tessellation;
+		std::unique_ptr<vkb::core::BufferC> common;
+		std::unique_ptr<vkb::core::BufferC> static_tessellation;
+		std::unique_ptr<vkb::core::BufferC> dynamic_tessellation;
 	} uniform_buffers;
 
 	struct
@@ -91,7 +91,8 @@ class PatchControlPoints : public ApiVulkanSample
 	void render(float delta_time) override;
 	void build_command_buffers() override;
 	bool prepare(const vkb::ApplicationOptions &options) override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 
 	void prepare_uniform_buffers();
@@ -105,4 +106,4 @@ class PatchControlPoints : public ApiVulkanSample
 	void create_descriptor_sets();
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_patch_control_points();
+std::unique_ptr<vkb::VulkanSampleC> create_patch_control_points();

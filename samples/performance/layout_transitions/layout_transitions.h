@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,14 +25,19 @@
 /**
  * @brief Transitioning images from UNDEFINED vs last known layout
  */
-class LayoutTransitions : public vkb::VulkanSample<vkb::BindingType::C>
+class LayoutTransitions : public vkb::VulkanSampleC
 {
   public:
 	LayoutTransitions();
 
 	virtual ~LayoutTransitions() = default;
 
-	virtual bool prepare(const vkb::ApplicationOptions &options) override;
+	bool prepare(const vkb::ApplicationOptions &options) override;
+#if defined(PLATFORM__MACOS) && TARGET_OS_IOS && TARGET_OS_SIMULATOR
+	void request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_layer_settings(std::vector<VkLayerSettingEXT>                    &requested_layer_settings,
+	                            vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const override;
+#endif
 
   private:
 	enum LayoutTransitionType : int
@@ -43,21 +48,21 @@ class LayoutTransitions : public vkb::VulkanSample<vkb::BindingType::C>
 
 	vkb::sg::Camera *camera{nullptr};
 
-	std::unique_ptr<vkb::RenderTarget> create_render_target(vkb::core::Image &&swapchain_image);
+	std::unique_ptr<vkb::rendering::RenderTargetC> create_render_target(vkb::core::Image &&swapchain_image);
 
 	virtual void prepare_render_context() override;
 
-	void draw(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target) override;
+	void draw(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target) override;
 
 	virtual void draw_gui() override;
 
 	VkImageLayout pick_old_layout(VkImageLayout last_layout);
 
-	vkb::RenderPipeline gbuffer_pipeline;
+	vkb::rendering::RenderPipelineC gbuffer_pipeline;
 
-	vkb::RenderPipeline lighting_pipeline;
+	vkb::rendering::RenderPipelineC lighting_pipeline;
 
 	LayoutTransitionType layout_transition_type{LayoutTransitionType::UNDEFINED};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_layout_transitions();
+std::unique_ptr<vkb::VulkanSampleC> create_layout_transitions();

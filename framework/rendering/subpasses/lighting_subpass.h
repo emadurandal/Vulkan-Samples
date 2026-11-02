@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,15 +18,22 @@
 #pragma once
 
 #include "buffer_pool.h"
-#include "rendering/subpass.h"
-
 #include "common/glm_common.h"
+#include "rendering/subpass.h"
+#include "scene_graph/scene.h"
 
 // This value is per type of light that we feed into the shader
-#define MAX_DEFERRED_LIGHT_COUNT 32
+#define MAX_DEFERRED_LIGHT_COUNT 48
 
 namespace vkb
 {
+namespace core
+{
+template <vkb::BindingType bindingType>
+class CommandBuffer;
+using CommandBufferC = CommandBuffer<vkb::BindingType::C>;
+}        // namespace core
+
 namespace sg
 {
 class Camera;
@@ -47,29 +54,30 @@ struct alignas(16) LightUniform
 
 struct alignas(16) DeferredLights
 {
-	Light directional_lights[MAX_DEFERRED_LIGHT_COUNT];
-	Light point_lights[MAX_DEFERRED_LIGHT_COUNT];
-	Light spot_lights[MAX_DEFERRED_LIGHT_COUNT];
+	vkb::rendering::Light directional_lights[MAX_DEFERRED_LIGHT_COUNT];
+	vkb::rendering::Light point_lights[MAX_DEFERRED_LIGHT_COUNT];
+	vkb::rendering::Light spot_lights[MAX_DEFERRED_LIGHT_COUNT];
 };
 
 /**
  * @brief Lighting pass of Deferred Rendering
  */
-class LightingSubpass : public Subpass
+class LightingSubpass : public vkb::rendering::SubpassC
 {
   public:
-	LightingSubpass(RenderContext &render_context, ShaderSource &&vertex_shader, ShaderSource &&fragment_shader, sg::Camera &camera, sg::Scene &scene);
+	LightingSubpass(
+	    vkb::rendering::RenderContextC &render_context, vkb::core::ShaderSource &&vertex_shader, vkb::core::ShaderSource &&fragment_shader, sg::Camera &camera, vkb::scene_graph::SceneC &scene);
 
 	virtual void prepare() override;
 
-	void draw(CommandBuffer &command_buffer) override;
+	void draw(vkb::core::CommandBufferC &command_buffer) override;
 
   private:
 	sg::Camera &camera;
 
-	sg::Scene &scene;
+	vkb::scene_graph::SceneC &scene;
 
-	ShaderVariant lighting_variant;
+	vkb::core::ShaderVariant lighting_variant;
 };
 
 }        // namespace vkb

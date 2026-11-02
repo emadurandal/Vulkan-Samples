@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -44,7 +44,7 @@ class HPPTerrainTessellation : public HPPApiVulkanSample
 		HPPTexture texture;
 
 		glm::mat4                             transform;
-		std::unique_ptr<vkb::core::HPPBuffer> transform_buffer;
+		std::unique_ptr<vkb::core::BufferCpp> transform_buffer;
 
 		void destroy(vk::Device device)
 		{
@@ -94,8 +94,8 @@ class HPPTerrainTessellation : public HPPApiVulkanSample
 		vk::PipelineLayout      pipeline_layout;
 		vk::Pipeline            pipeline;
 
-		std::unique_ptr<vkb::core::HPPBuffer> vertices;
-		std::unique_ptr<vkb::core::HPPBuffer> indices;
+		std::unique_ptr<vkb::core::BufferCpp> vertices;
+		std::unique_ptr<vkb::core::BufferCpp> indices;
 		uint32_t                              index_count;
 
 		HPPTexture height_map;
@@ -106,7 +106,7 @@ class HPPTerrainTessellation : public HPPApiVulkanSample
 		std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
 
 		Tessellation                          tessellation;
-		std::unique_ptr<vkb::core::HPPBuffer> tessellation_buffer;
+		std::unique_ptr<vkb::core::BufferCpp> tessellation_buffer;
 		bool                                  tessellation_enabled = true;
 
 		void destroy(vk::Device device)
@@ -145,7 +145,7 @@ class HPPTerrainTessellation : public HPPApiVulkanSample
 	bool prepare(const vkb::ApplicationOptions &options) override;
 
 	// from vkb::VulkanSample
-	void request_gpu_features(vkb::core::HPPPhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceCpp &gpu) override;
 
 	// from HPPApiVulkanSample
 	void build_command_buffers() override;

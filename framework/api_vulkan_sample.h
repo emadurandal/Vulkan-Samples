@@ -1,4 +1,5 @@
-/* Copyright (c) 2019-2024, Sascha Willems
+/* Copyright (c) 2019-2026, Sascha Willems
+ * Copyright (c) 2025-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -58,7 +59,7 @@ struct SwapchainBuffer
 struct Texture
 {
 	std::unique_ptr<vkb::sg::Image> image;
-	VkSampler                       sampler;
+	VkSampler                       sampler = VK_NULL_HANDLE;
 };
 
 /**
@@ -71,6 +72,7 @@ struct Vertex
 	glm::vec2 uv;
 	glm::vec4 joint0;
 	glm::vec4 weight0;
+	glm::vec3 color;
 };
 
 /**
@@ -99,7 +101,7 @@ struct Meshlet
  *
  * See vkb::VulkanSample for documentation
  */
-class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
+class ApiVulkanSample : public vkb::VulkanSampleC
 {
   public:
 	ApiVulkanSample() = default;
@@ -111,8 +113,6 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	virtual void input_event(const vkb::InputEvent &input_event) override;
 
 	virtual void update(float delta_time) override;
-
-	virtual void update_overlay(float delta_time, const std::function<void()> &additional_ui) override;
 
 	virtual bool resize(const uint32_t width, const uint32_t height) override;
 
@@ -148,7 +148,13 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	std::vector<VkCommandBuffer> draw_cmd_buffers;
 
 	// Global render pass for frame buffer writes
-	VkRenderPass render_pass;
+	VkRenderPass render_pass = VK_NULL_HANDLE;
+
+	// Returns true if using dynamic rendering
+	bool uses_dynamic_rendering() const
+	{
+		return render_pass == VK_NULL_HANDLE;
+	}
 
 	// List of available frame buffers (same as number of swap chain images)
 	std::vector<VkFramebuffer> framebuffers;
@@ -200,7 +206,7 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @param size The size of the descriptor (default: VK_WHOLE_SIZE)
 	 * @param offset The offset of the descriptor (default: 0)
 	 */
-	VkDescriptorBufferInfo create_descriptor(vkb::core::Buffer &buffer, VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
+	VkDescriptorBufferInfo create_descriptor(vkb::core::BufferC &buffer, VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
 
 	/**
 	 * @brief Creates an image descriptor
@@ -235,8 +241,9 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @param file The filename of the model to load
 	 * @param index The index of the model to load from the GLTF file (default: 0)
 	 * @param storage_buffer Set true to store model in SSBO
+	 * @param additional_buffer_usage_flags Additional buffer usage flags to be applied to vertex and index buffers
 	 */
-	std::unique_ptr<vkb::sg::SubMesh> load_model(const std::string &file, uint32_t index = 0, bool storage_buffer = false);
+	std::unique_ptr<vkb::sg::SubMesh> load_model(const std::string &file, uint32_t index = 0, bool storage_buffer = false, VkBufferUsageFlags additional_buffer_usage_flags = 0);
 
 	/**
 	 * @brief Records the necessary drawing commands to a command buffer
@@ -257,7 +264,7 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @brief Synchronously execute a block code within a command buffer vkb wrapper, then submit the command buffer and wait for completion.
 	 * @param f a block of code which is passed a command buffer which is already in the begin state.
 	 */
-	void with_vkb_command_buffer(const std::function<void(vkb::CommandBuffer &command_buffer)> &f);
+	void with_vkb_command_buffer(const std::function<void(vkb::core::CommandBufferC &command_buffer)> &f);
 
   public:
 	/**
@@ -292,7 +299,7 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	/**
 	 * @brief Creates a new (graphics) command pool object storing command buffers
 	 */
-	void create_command_pool();
+	virtual void create_command_pool();
 
 	/**
 	 * @brief Setup default depth and stencil views
@@ -346,9 +353,8 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @brief Load a SPIR-V shader
 	 * @param file The file location of the shader relative to the shaders folder
 	 * @param stage The shader stage
-	 * @param src_language The shader language
 	 */
-	VkPipelineShaderStageCreateInfo load_shader(const std::string &file, VkShaderStageFlagBits stage, vkb::ShaderSourceLanguage src_language = vkb::ShaderSourceLanguage::GLSL);
+	VkPipelineShaderStageCreateInfo load_shader(const std::string &file, VkShaderStageFlagBits stage);
 
 	/**
 	 * @brief Load a SPIR-V shader based on current shader language selection
@@ -361,14 +367,25 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	/**
 	 * @brief Updates the overlay
 	 * @param delta_time The time taken since the last frame
+	 * @param additional_ui Function that implements an additional Gui
 	 */
-	void update_overlay(float delta_time);
+	void update_overlay(float delta_time, const std::function<void()> &additional_ui) override;
 
 	/**
 	 * @brief If the gui is enabled, then record the drawing commands to a command buffer
 	 * @param command_buffer A valid command buffer that is ready to be recorded to
 	 */
 	void draw_ui(const VkCommandBuffer command_buffer);
+
+	/**
+	 * @brief Draw UI for dynamic rendering mode
+	 * @param command_buffer A valid command buffer (after ending your main rendering pass)
+	 * @param swapchain_image_index The swapchain image index to render onto
+	 *
+	 * This method starts its own rendering pass, draws the UI, and ends the pass.
+	 * Call this after ending your main rendering pass (vkCmdEndRenderingKHR).
+	 */
+	void draw_ui(const VkCommandBuffer command_buffer, uint32_t swapchain_image_index);
 
 	/**
 	 * @brief Prepare the frame for workload submission, acquires the next image from the swap chain and
@@ -391,6 +408,15 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @brief Initializes the UI. Can be overridden to customize the way it is displayed.
 	 */
 	virtual void prepare_gui();
+
+	/**
+	 * @brief Returns the subpass index used for GUI rendering (render pass path only).
+	 *        Override in samples that use a multi-subpass render pass with the GUI in a later subpass.
+	 */
+	virtual uint32_t get_gui_subpass() const
+	{
+		return 0;
+	}
 
   private:
 	/** brief Indicates that the view (position, rotation) has changed and buffers containing camera matrices need to be updated */
@@ -438,11 +464,11 @@ class ApiVulkanSample : public vkb::VulkanSample<vkb::BindingType::C>
 	std::string title = "Vulkan Example";
 	std::string name  = "vulkanExample";
 
-	struct
+	struct ImageData
 	{
-		VkImage        image;
-		VkDeviceMemory mem;
-		VkImageView    view;
+		VkImage        image{VK_NULL_HANDLE};
+		VkDeviceMemory mem{VK_NULL_HANDLE};
+		VkImageView    view{VK_NULL_HANDLE};
 	} depth_stencil;
 
 	struct

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,12 +25,14 @@ namespace vkb
 namespace common
 {
 struct HPPLoadStoreInfo;
-
 }
+
 namespace rendering
 {
-struct HPPAttachment;
-}
+template <vkb::BindingType bindingType>
+struct Attachment;
+using AttachmentCpp = Attachment<vkb::BindingType::Cpp>;
+}        // namespace rendering
 
 namespace core
 {
@@ -57,12 +59,12 @@ class HPPRenderPass : private vkb::RenderPass
 	using vkb::RenderPass::get_color_output_count;
 
   public:
-	HPPRenderPass(vkb::core::HPPDevice                             &device,
-	              const std::vector<vkb::rendering::HPPAttachment> &attachments,
+	HPPRenderPass(vkb::core::DeviceCpp                             &device,
+	              const std::vector<vkb::rendering::AttachmentCpp> &attachments,
 	              const std::vector<vkb::common::HPPLoadStoreInfo> &load_store_infos,
 	              const std::vector<vkb::core::HPPSubpassInfo>     &subpasses) :
-	    vkb::RenderPass(reinterpret_cast<vkb::Device &>(device),
-	                    reinterpret_cast<std::vector<vkb::Attachment> const &>(attachments),
+	    vkb::RenderPass(reinterpret_cast<vkb::core::DeviceC &>(device),
+	                    reinterpret_cast<std::vector<vkb::rendering::AttachmentC> const &>(attachments),
 	                    reinterpret_cast<std::vector<vkb::LoadStoreInfo> const &>(load_store_infos),
 	                    reinterpret_cast<std::vector<vkb::SubpassInfo> const &>(subpasses))
 	{}
@@ -72,9 +74,10 @@ class HPPRenderPass : private vkb::RenderPass
 		return static_cast<vk::RenderPass>(vkb::RenderPass::get_handle());
 	}
 
-	const vk::Extent2D get_render_area_granularity() const
+	vk::Extent2D get_render_area_granularity() const
 	{
-		return static_cast<vk::Extent2D>(vkb::RenderPass::get_render_area_granularity());
+		VkExtent2D extent = vkb::RenderPass::get_render_area_granularity();
+		return *reinterpret_cast<vk::Extent2D *>(&extent);
 	}
 };
 }        // namespace core

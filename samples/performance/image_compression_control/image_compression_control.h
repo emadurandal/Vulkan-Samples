@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Arm Limited and Contributors
+/* Copyright (c) 2024-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -33,22 +33,26 @@
  * The UI shows the impact compression has on image size and bandwidth,
  * illustrating the benefits of fixed-rate (visually lossless) compression.
  */
-class ImageCompressionControlSample : public vkb::VulkanSample<vkb::BindingType::C>
+class ImageCompressionControlSample : public vkb::VulkanSampleC
 {
   public:
 	ImageCompressionControlSample();
 
 	virtual bool prepare(const vkb::ApplicationOptions &options) override;
 
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 
 	virtual ~ImageCompressionControlSample() = default;
 
 	virtual void update(float delta_time) override;
 
-	virtual void render(vkb::CommandBuffer &command_buffer) override;
+	virtual void render(vkb::core::CommandBufferC &command_buffer) override;
 
 	void draw_gui() override;
+
+  protected:
+	void request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 
   private:
 	vkb::sg::PerspectiveCamera *camera{nullptr};
@@ -57,7 +61,7 @@ class ImageCompressionControlSample : public vkb::VulkanSample<vkb::BindingType:
 
 	virtual void create_render_context() override;
 
-	std::unique_ptr<vkb::RenderTarget> create_render_target(vkb::core::Image &&swapchain_image);
+	std::unique_ptr<vkb::rendering::RenderTargetC> create_render_target(vkb::core::Image &&swapchain_image);
 
 	enum class Attachments : int
 	{
@@ -186,4 +190,4 @@ class ImageCompressionControlSample : public vkb::VulkanSample<vkb::BindingType:
 	FixedRateCompressionLevel last_gui_fixed_rate_compression_level{gui_fixed_rate_compression_level};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_image_compression_control();
+std::unique_ptr<vkb::VulkanSampleC> create_image_compression_control();

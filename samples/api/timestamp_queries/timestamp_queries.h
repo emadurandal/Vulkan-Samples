@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Sascha Willems
+/* Copyright (c) 2022-2025, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -44,8 +44,8 @@ class TimestampQueries : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> matrices;
-		std::unique_ptr<vkb::core::Buffer> params;
+		std::unique_ptr<vkb::core::BufferC> matrices;
+		std::unique_ptr<vkb::core::BufferC> params;
 	} uniform_buffers;
 
 	struct UBOVS
@@ -64,17 +64,17 @@ class TimestampQueries : public ApiVulkanSample
 
 	struct
 	{
-		VkPipeline skybox;
-		VkPipeline reflect;
-		VkPipeline composition;
-		VkPipeline bloom[2];
+		VkPipeline skybox      = VK_NULL_HANDLE;
+		VkPipeline reflect     = VK_NULL_HANDLE;
+		VkPipeline composition = VK_NULL_HANDLE;
+		VkPipeline bloom[2]    = {VK_NULL_HANDLE};
 	} pipelines;
 
 	struct
 	{
-		VkPipelineLayout models;
-		VkPipelineLayout composition;
-		VkPipelineLayout bloom_filter;
+		VkPipelineLayout models       = VK_NULL_HANDLE;
+		VkPipelineLayout composition  = VK_NULL_HANDLE;
+		VkPipelineLayout bloom_filter = VK_NULL_HANDLE;
 	} pipeline_layouts;
 
 	struct
@@ -87,17 +87,17 @@ class TimestampQueries : public ApiVulkanSample
 
 	struct
 	{
-		VkDescriptorSetLayout models;
-		VkDescriptorSetLayout composition;
-		VkDescriptorSetLayout bloom_filter;
+		VkDescriptorSetLayout models       = VK_NULL_HANDLE;
+		VkDescriptorSetLayout composition  = VK_NULL_HANDLE;
+		VkDescriptorSetLayout bloom_filter = VK_NULL_HANDLE;
 	} descriptor_set_layouts;
 
 	// Framebuffer for offscreen rendering
 	struct FrameBufferAttachment
 	{
-		VkImage        image;
-		VkDeviceMemory mem;
-		VkImageView    view;
+		VkImage        image = VK_NULL_HANDLE;
+		VkDeviceMemory mem   = VK_NULL_HANDLE;
+		VkImageView    view  = VK_NULL_HANDLE;
 		VkFormat       format;
 		void           destroy(VkDevice device)
 		{
@@ -109,20 +109,20 @@ class TimestampQueries : public ApiVulkanSample
 	struct FrameBuffer
 	{
 		int32_t               width, height;
-		VkFramebuffer         framebuffer;
+		VkFramebuffer         framebuffer = VK_NULL_HANDLE;
 		FrameBufferAttachment color[2];
 		FrameBufferAttachment depth;
-		VkRenderPass          render_pass;
-		VkSampler             sampler;
+		VkRenderPass          render_pass = VK_NULL_HANDLE;
+		VkSampler             sampler     = VK_NULL_HANDLE;
 	} offscreen;
 
 	struct
 	{
 		int32_t               width, height;
-		VkFramebuffer         framebuffer;
+		VkFramebuffer         framebuffer = VK_NULL_HANDLE;
 		FrameBufferAttachment color[1];
-		VkRenderPass          render_pass;
-		VkSampler             sampler;
+		VkRenderPass          render_pass = VK_NULL_HANDLE;
+		VkSampler             sampler     = VK_NULL_HANDLE;
 	} filter_pass;
 
 	std::vector<std::string> object_names;
@@ -134,7 +134,7 @@ class TimestampQueries : public ApiVulkanSample
 
 	TimestampQueries();
 	~TimestampQueries();
-	virtual void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void         build_command_buffers() override;
 	void         create_attachment(VkFormat format, VkImageUsageFlagBits usage, FrameBufferAttachment *attachment);
 	void         prepare_offscreen_buffer();

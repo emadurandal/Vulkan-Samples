@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2020, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,11 +16,11 @@
  */
 
 #include "resource_record.h"
-
 #include "core/pipeline.h"
 #include "core/pipeline_layout.h"
 #include "core/render_pass.h"
 #include "core/shader_module.h"
+#include "rendering/render_target.h"
 #include "resource_cache.h"
 
 namespace vkb
@@ -34,15 +34,6 @@ inline void write_subpass_info(std::ostringstream &os, const std::vector<Subpass
 	{
 		write(os, item.input_attachments);
 		write(os, item.output_attachments);
-	}
-}
-
-inline void write_processes(std::ostringstream &os, const std::vector<std::string> &value)
-{
-	write(os, value.size());
-	for (const std::string &item : value)
-	{
-		write(os, item);
 	}
 }
 }        // namespace
@@ -64,24 +55,22 @@ const std::ostringstream &ResourceRecord::get_stream()
 	return stream;
 }
 
-size_t ResourceRecord::register_shader_module(VkShaderStageFlagBits stage, const ShaderSource &glsl_source, const std::string &entry_point, const ShaderVariant &shader_variant)
+size_t ResourceRecord::register_shader_module(VkShaderStageFlagBits stage, const vkb::core::ShaderSource &glsl_source, const std::string &entry_point, const vkb::core::ShaderVariant &shader_variant)
 {
 	shader_module_indices.push_back(shader_module_indices.size());
 
-	write(stream, ResourceType::ShaderModule, stage, glsl_source.get_source(), entry_point, shader_variant.get_preamble());
-
-	write_processes(stream, shader_variant.get_processes());
+	write(stream, ResourceType::ShaderModule, stage, glsl_source.get_source(), entry_point);
 
 	return shader_module_indices.back();
 }
 
-size_t ResourceRecord::register_pipeline_layout(const std::vector<ShaderModule *> &shader_modules)
+size_t ResourceRecord::register_pipeline_layout(const std::vector<vkb::core::ShaderModuleC *> &shader_modules)
 {
 	pipeline_layout_indices.push_back(pipeline_layout_indices.size());
 
 	std::vector<size_t> shader_indices(shader_modules.size());
 	std::transform(shader_modules.begin(), shader_modules.end(), shader_indices.begin(),
-	               [this](ShaderModule *shader_module) { return shader_module_to_index.at(shader_module); });
+	               [this](vkb::core::ShaderModuleC *shader_module) { return shader_module_to_index.at(shader_module); });
 
 	write(stream,
 	      ResourceType::PipelineLayout,
@@ -90,7 +79,7 @@ size_t ResourceRecord::register_pipeline_layout(const std::vector<ShaderModule *
 	return pipeline_layout_indices.back();
 }
 
-size_t ResourceRecord::register_render_pass(const std::vector<Attachment> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses)
+size_t ResourceRecord::register_render_pass(const std::vector<vkb::rendering::AttachmentC> &attachments, const std::vector<LoadStoreInfo> &load_store_infos, const std::vector<SubpassInfo> &subpasses)
 {
 	render_pass_indices.push_back(render_pass_indices.size());
 
@@ -104,7 +93,7 @@ size_t ResourceRecord::register_render_pass(const std::vector<Attachment> &attac
 	return render_pass_indices.back();
 }
 
-size_t ResourceRecord::register_graphics_pipeline(VkPipelineCache /*pipeline_cache*/, PipelineState &pipeline_state)
+size_t ResourceRecord::register_graphics_pipeline(VkPipelineCache /*pipeline_cache*/, vkb::rendering::PipelineStateC &pipeline_state)
 {
 	graphics_pipeline_indices.push_back(graphics_pipeline_indices.size());
 
@@ -145,7 +134,7 @@ size_t ResourceRecord::register_graphics_pipeline(VkPipelineCache /*pipeline_cac
 	return graphics_pipeline_indices.back();
 }
 
-void ResourceRecord::set_shader_module(size_t index, const ShaderModule &shader_module)
+void ResourceRecord::set_shader_module(size_t index, const vkb::core::ShaderModuleC &shader_module)
 {
 	shader_module_to_index[&shader_module] = index;
 }

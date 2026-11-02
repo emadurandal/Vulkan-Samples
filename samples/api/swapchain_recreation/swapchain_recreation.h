@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Google
+/* Copyright (c) 2023-2026, Google
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -25,7 +25,7 @@
  * @brief A sample that implements best practices in handling present resources and swapchain
  * recreation, for example due to window resizing or present mode changes.
  */
-class SwapchainRecreation : public vkb::VulkanSample<vkb::BindingType::C>
+class SwapchainRecreation : public vkb::VulkanSampleC
 {
 	struct SwapchainObjects
 	{
@@ -112,8 +112,12 @@ class SwapchainRecreation : public vkb::VulkanSample<vkb::BindingType::C>
 	/// Submission and present queue.
 	const vkb::Queue *queue = nullptr;
 
+	/// Allow enabling VK_EXT_surface_maintenance1 and VK_EXT_swapchain_maintenance1.
+	///
+	/// Can be set to false by setting environment variable `USE_MAINTENANCE1=no`
+	bool allow_maintenance1 = true;
 	/// Whether the VK_EXT_surface_maintenance1 and VK_EXT_swapchain_maintenance1 extensions are
-	/// to be used.
+	/// enabled.
 	bool has_maintenance1 = false;
 
 	/// Surface data.
@@ -168,7 +172,11 @@ class SwapchainRecreation : public vkb::VulkanSample<vkb::BindingType::C>
 	// User toggles.
 	bool recreate_swapchain_on_present_mode_change = false;
 
-	std::unique_ptr<vkb::Device> create_device(vkb::PhysicalDevice &gpu) override;
+	// from vkb::VulkanSample
+	std::unique_ptr<vkb::core::DeviceC> create_device(vkb::core::PhysicalDeviceC &gpu) override;
+	void                                request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void                                request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
+	void                                request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 
 	void get_queue();
 	void query_surface_format();

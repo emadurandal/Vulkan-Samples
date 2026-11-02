@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,8 +17,6 @@
 
 #pragma once
 
-#include <ctpl_stl.h>
-
 #include "buffer_pool.h"
 #include "common/utils.h"
 #include "rendering/render_pipeline.h"
@@ -28,12 +26,92 @@
 #include "scene_graph/components/perspective_camera.h"
 #include "vulkan_sample.h"
 
+class ThreadPool
+{
+  public:
+	explicit ThreadPool() :
+	    stop_flag(false)
+	{}
+
+	~ThreadPool()
+	{
+		shutdown();
+	}
+
+	template <class F, class... Args>
+	auto push(F &&f, Args &&...args) -> std::future<std::invoke_result_t<F, Args..., size_t>>
+	{
+		using return_type                 = std::invoke_result_t<F, Args..., size_t>;
+		auto                     task_ptr = std::make_shared<std::packaged_task<return_type(size_t)>>(std::bind(std::forward<F>(f), std::forward<Args>(args)..., std::placeholders::_1));
+		std::future<return_type> res      = task_ptr->get_future();
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			tasks.emplace([task_ptr](size_t thread_index) { (*task_ptr)(thread_index); });
+		}
+		condition.notify_one();
+		return res;
+	}
+
+	void resize(size_t thread_count)
+	{
+		if (thread_count != workers.size())
+		{
+			shutdown();
+
+			for (size_t i = 0; i < thread_count; ++i)
+			{
+				workers.emplace_back([this, i] {
+					size_t thread_index = i;
+					while (true)
+					{
+						std::function<void(size_t)> task;
+						{
+							std::unique_lock<std::mutex> lock(queue_mutex);
+							condition.wait(lock, [this] { return stop_flag || !tasks.empty(); });
+							if (stop_flag && tasks.empty())
+								return;
+							task = std::move(tasks.front());
+							tasks.pop();
+						}
+						task(thread_index);
+					}
+				});
+			}
+		}
+	}
+
+	void shutdown()
+	{
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			stop_flag = true;
+		}
+		condition.notify_all();
+		for (auto &worker : workers)
+			worker.join();
+		workers.clear();
+		stop_flag = false;
+	}
+
+	size_t size() const
+	{
+		return workers.size();
+	}
+
+  private:
+	std::vector<std::thread>                workers;
+	std::queue<std::function<void(size_t)>> tasks;
+	std::mutex                              queue_mutex;
+	std::condition_variable                 condition;
+	std::atomic<bool>                       stop_flag;
+};
+
 /**
  * @brief Sample showing the use of secondary command buffers for
  *        multi-threaded recording, as well as the different
  *        strategies for recycling command buffers every frame
  */
-class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
+class CommandBufferUsage : public vkb::VulkanSampleC
 {
   public:
 	CommandBufferUsage();
@@ -51,7 +129,7 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 	{
 		uint32_t secondary_cmd_buf_count = 0;
 
-		vkb::CommandBuffer::ResetMode command_buffer_reset_mode = vkb::CommandBuffer::ResetMode::ResetPool;
+		vkb::CommandBufferResetMode command_buffer_reset_mode = vkb::CommandBufferResetMode::ResetPool;
 
 		bool multi_threading = false;
 
@@ -63,14 +141,16 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 	 *        into multiple secondary command buffers, optionally
 	 *        in different threads
 	 */
-	class ForwardSubpassSecondary : public vkb::ForwardSubpass
+	class ForwardSubpassSecondary : public vkb::rendering::subpasses::ForwardSubpassC
 	{
 	  public:
-		ForwardSubpassSecondary(vkb::RenderContext &render_context,
-		                        vkb::ShaderSource &&vertex_source, vkb::ShaderSource &&fragment_source,
-		                        vkb::sg::Scene &scene, vkb::sg::Camera &camera);
+		ForwardSubpassSecondary(vkb::rendering::RenderContextC &render_context,
+		                        vkb::core::ShaderSource       &&vertex_source,
+		                        vkb::core::ShaderSource       &&fragment_source,
+		                        vkb::scene_graph::SceneC       &scene,
+		                        vkb::sg::Camera                &camera);
 
-		void draw(vkb::CommandBuffer &primary_command_buffer) override;
+		void draw(vkb::core::CommandBufferC &primary_command_buffer) override;
 
 		void set_viewport(VkViewport &viewport);
 
@@ -89,8 +169,11 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 		 * @param mesh_end Index to the mesh where recording will stop (not included)
 		 * @param thread_index Identifies the resources allocated for this thread
 		 */
-		void record_draw(vkb::CommandBuffer &command_buffer, const std::vector<std::pair<vkb::sg::Node *, vkb::sg::SubMesh *>> &nodes,
-		                 uint32_t mesh_start, uint32_t mesh_end, size_t thread_index = 0);
+		void record_draw(vkb::core::CommandBufferC                                                   &command_buffer,
+		                 const std::vector<std::pair<vkb::scene_graph::NodeC *, vkb::sg::SubMesh *>> &nodes,
+		                 uint32_t                                                                     mesh_start,
+		                 uint32_t                                                                     mesh_end,
+		                 size_t                                                                       thread_index = 0);
 
 		/**
 		 * @brief Records the necessary commands to draw the specified range of scene meshes
@@ -100,25 +183,30 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 		 * @param nodes The meshes to draw
 		 * @param mesh_start Index to the first mesh to draw
 		 * @param mesh_end Index to the mesh where recording will stop (not included)
+		 * @param subpass_index Index of the subpass being recorded
 		 * @param thread_index Identifies the resources allocated for this thread
 		 * @return a pointer to the recorded secondary command buffer
 		 */
-		vkb::CommandBuffer *record_draw_secondary(vkb::CommandBuffer &primary_command_buffer, const std::vector<std::pair<vkb::sg::Node *, vkb::sg::SubMesh *>> &nodes,
-		                                          uint32_t mesh_start, uint32_t mesh_end, size_t thread_index = 0);
+		std::shared_ptr<vkb::core::CommandBufferC> record_draw_secondary(vkb::core::CommandBufferC                                                   &primary_command_buffer,
+		                                                                 const std::vector<std::pair<vkb::scene_graph::NodeC *, vkb::sg::SubMesh *>> &nodes,
+		                                                                 uint32_t                                                                     mesh_start,
+		                                                                 uint32_t                                                                     mesh_end,
+		                                                                 uint32_t                                                                     subpass_index,
+		                                                                 size_t                                                                       thread_index = 0);
 
 		VkViewport viewport{};
 
 		VkRect2D scissor{};
 
-		vkb::ColorBlendAttachmentState color_blend_attachment{};
+		vkb::rendering::ColorBlendAttachmentStateC color_blend_attachment{};
 
-		vkb::ColorBlendState color_blend_state{};
+		vkb::rendering::ColorBlendStateC color_blend_state{};
 
 		ForwardSubpassSecondaryState state{};
 
 		float avg_draws_per_buffer{0};
 
-		ctpl::thread_pool thread_pool;
+		ThreadPool thread_pool;
 	};
 
   private:
@@ -126,9 +214,9 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 
 	vkb::sg::PerspectiveCamera *camera{nullptr};
 
-	void render(vkb::CommandBuffer &command_buffer) override;
+	void render(vkb::core::CommandBufferC &command_buffer) override;
 
-	void draw_renderpass(vkb::CommandBuffer &primary_command_buffer, vkb::RenderTarget &render_target) override;
+	void draw_renderpass(vkb::core::CommandBufferC &primary_command_buffer, vkb::rendering::RenderTargetC &render_target) override;
 
 	void draw_gui() override;
 
@@ -147,4 +235,4 @@ class CommandBufferUsage : public vkb::VulkanSample<vkb::BindingType::C>
 	uint32_t max_thread_count{0};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_command_buffer_usage();
+std::unique_ptr<vkb::VulkanSampleC> create_command_buffer_usage();

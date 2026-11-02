@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -53,7 +53,7 @@ class HPPTextureMipMapGeneration : public HPPApiVulkanSample
 	bool prepare(const vkb::ApplicationOptions &options) override;
 
 	// from vkb::VulkanSample
-	void request_gpu_features(vkb::core::HPPPhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceCpp &gpu) override;
 
 	// from HPPApiVulkanSample
 	void build_command_buffers() override;
@@ -84,7 +84,7 @@ class HPPTextureMipMapGeneration : public HPPApiVulkanSample
 	std::unique_ptr<vkb::scene_graph::components::HPPSubMesh> scene;
 	Texture                                                   texture;
 	UBO                                                       ubo;
-	std::unique_ptr<vkb::core::HPPBuffer>                     uniform_buffer;
+	std::unique_ptr<vkb::core::BufferCpp>                     uniform_buffer;
 };
 
 std::unique_ptr<vkb::Application> create_hpp_texture_mipmap_generation();

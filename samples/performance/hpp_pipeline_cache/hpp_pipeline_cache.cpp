@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,10 +16,8 @@
  */
 
 #include "hpp_pipeline_cache.h"
-
 #include "common/hpp_utils.h"
-#include "hpp_gui.h"
-#include "rendering/subpasses/hpp_forward_subpass.h"
+#include "rendering/subpasses/forward_subpass.h"
 
 HPPPipelineCache::HPPPipelineCache()
 {
@@ -43,12 +41,15 @@ HPPPipelineCache::~HPPPipelineCache()
 		get_device().get_handle().destroyPipelineCache(pipeline_cache);
 	}
 
-	vkb::fs::write_temp(get_device().get_resource_cache().serialize(), "hpp_cache.data");
+	if (has_device())
+	{
+		vkb::fs::write_temp(get_device().get_resource_cache().serialize(), "hpp_cache.data");
+	}
 }
 
 bool HPPPipelineCache::prepare(const vkb::ApplicationOptions &options)
 {
-	if (!VulkanSample<vkb::BindingType::Cpp>::prepare(options))
+	if (!vkb::VulkanSampleCpp::prepare(options))
 	{
 		return false;
 	}
@@ -65,12 +66,8 @@ bool HPPPipelineCache::prepare(const vkb::ApplicationOptions &options)
 	}
 
 	/* Add initial pipeline cache data from the cached file */
-	/* Note: unfortunately, no compiler can detect the correct data type from the "natural" constructor here:                   */
-	/*	vk::PipelineCacheCreateInfo pipeline_cache_create_info({}, pipeline_data);                                              */
-	/* This is due to the templatized second argument. You could help the compiler by a cast                                    */
-	/*	vk::PipelineCacheCreateInfo pipeline_cache_create_info({}, vk::ArrayProxyNoTemporaries<const uint8_t>(pipeline_data));  */
-	/* But, obviously, this looks a bit awkward. Instead, you can use the simple two-argument approach with size and pointer:   */
-	vk::PipelineCacheCreateInfo pipeline_cache_create_info({}, pipeline_data.size(), pipeline_data.data());
+	vk::PipelineCacheCreateInfo pipeline_cache_create_info{.initialDataSize = static_cast<uint32_t>(pipeline_data.size()),
+	                                                       .pInitialData    = pipeline_data.data()};
 
 	/* Create Vulkan pipeline cache */
 	pipeline_cache = get_device().get_handle().createPipelineCache(pipeline_cache_create_info);
@@ -107,12 +104,12 @@ bool HPPPipelineCache::prepare(const vkb::ApplicationOptions &options)
 	auto &camera_node = vkb::common::add_free_camera(get_scene(), "main_camera", get_render_context().get_surface_extent());
 	camera            = &camera_node.get_component<vkb::sg::Camera>();
 
-	vkb::ShaderSource vert_shader("base.vert");
-	vkb::ShaderSource frag_shader("base.frag");
-	auto              scene_subpass = std::make_unique<vkb::rendering::subpasses::HPPForwardSubpass>(
+	vkb::core::ShaderSource vert_shader("base.vert.spv");
+	vkb::core::ShaderSource frag_shader("base.frag.spv");
+	auto                    scene_subpass = std::make_unique<vkb::rendering::subpasses::ForwardSubpassCpp>(
         get_render_context(), std::move(vert_shader), std::move(frag_shader), get_scene(), *camera);
 
-	auto render_pipeline = std::make_unique<vkb::rendering::HPPRenderPipeline>();
+	auto render_pipeline = std::make_unique<vkb::rendering::RenderPipelineCpp>();
 	render_pipeline->add_subpass(std::move(scene_subpass));
 
 	set_render_pipeline(std::move(render_pipeline));
@@ -158,10 +155,10 @@ void HPPPipelineCache::update(float delta_time)
 		record_frame_time_next_frame    = false;
 	}
 
-	VulkanSample<vkb::BindingType::Cpp>::update(delta_time);
+	vkb::VulkanSampleCpp::update(delta_time);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::Cpp>> create_hpp_pipeline_cache()
+std::unique_ptr<vkb::VulkanSampleCpp> create_hpp_pipeline_cache()
 {
 	return std::make_unique<HPPPipelineCache>();
 }

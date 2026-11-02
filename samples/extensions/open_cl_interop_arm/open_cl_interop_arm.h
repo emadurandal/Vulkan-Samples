@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Arm Limited and Contributors
+/* Copyright (c) 2021-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -35,6 +35,10 @@ class OpenCLInteropArm : public ApiVulkanSample
 	void render(float delta_time) override;
 	void view_changed() override;
 	void build_command_buffers() override;
+
+  protected:
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 
   private:
 	void prepare_pipelines();
@@ -83,10 +87,10 @@ class OpenCLInteropArm : public ApiVulkanSample
 	VkDescriptorSet       descriptor_set{VK_NULL_HANDLE};
 	VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
 
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;
-	std::unique_ptr<vkb::core::Buffer> index_buffer;
-	uint32_t                           index_count{0};
-	std::unique_ptr<vkb::core::Buffer> uniform_buffer_vs;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC> index_buffer;
+	uint32_t                            index_count{0};
+	std::unique_ptr<vkb::core::BufferC> uniform_buffer_vs;
 
 	VkFence rendering_finished_fence{VK_NULL_HANDLE};
 

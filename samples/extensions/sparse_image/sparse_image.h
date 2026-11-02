@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Mobica Limited
+/* Copyright (c) 2023-2025, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,6 +18,7 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
+#include <list>
 
 class SparseImage : public ApiVulkanSample
 {
@@ -158,7 +159,7 @@ class SparseImage : public ApiVulkanSample
 
 		uint32_t get_size()
 		{
-			return memory_sectors.size();
+			return static_cast<uint32_t>(memory_sectors.size());
 		}
 
 		std::list<std::weak_ptr<MemSector>> &get_memory_sectors()
@@ -191,7 +192,7 @@ class SparseImage : public ApiVulkanSample
 
 			for (size_t i = 0U; i < pages_per_allocation; i++)
 			{
-				available_offsets.insert(page_size * i);
+				available_offsets.insert(static_cast<uint32_t>(page_size * i));
 			}
 		}
 
@@ -324,13 +325,13 @@ class SparseImage : public ApiVulkanSample
 
 	VkQueue sparse_queue;
 
-	std::unique_ptr<vkb::core::Buffer> vertex_buffer;
+	std::unique_ptr<vkb::core::BufferC> vertex_buffer;
 
-	std::unique_ptr<vkb::core::Buffer> index_buffer;
-	size_t                             index_count;
+	std::unique_ptr<vkb::core::BufferC> index_buffer;
+	size_t                              index_count;
 
-	std::unique_ptr<vkb::core::Buffer> mvp_buffer;
-	std::unique_ptr<vkb::core::Buffer> frag_settings_data_buffer;
+	std::unique_ptr<vkb::core::BufferC> mvp_buffer;
+	std::unique_ptr<vkb::core::BufferC> frag_settings_data_buffer;
 
 	glm::mat4 current_mvp_transform;
 
@@ -392,8 +393,8 @@ class SparseImage : public ApiVulkanSample
 	void         build_command_buffers() override;
 	void         render(float delta_time) override;
 	bool         prepare(const vkb::ApplicationOptions &options) override;
-	void         request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void         request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	virtual void on_update_ui_overlay(vkb::Drawer &drawer) override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_sparse_image();
+std::unique_ptr<vkb::VulkanSampleC> create_sparse_image();

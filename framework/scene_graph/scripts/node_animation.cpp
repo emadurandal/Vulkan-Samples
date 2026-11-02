@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,8 +17,6 @@
 
 #include "node_animation.h"
 
-#include "common/error.h"
-
 #include "common/glm_common.h"
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -31,7 +29,7 @@ namespace vkb
 {
 namespace sg
 {
-NodeAnimation::NodeAnimation(Node &node, TransformAnimFn animation_fn) :
+NodeAnimation::NodeAnimation(vkb::scene_graph::NodeC &node, TransformAnimFn animation_fn) :
     NodeScript{node, ""},
     animation_fn{animation_fn}
 {

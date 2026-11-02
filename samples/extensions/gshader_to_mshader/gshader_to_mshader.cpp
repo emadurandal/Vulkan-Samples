@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Mobica Limited
+/* Copyright (c) 2024-2026, Mobica Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,12 +20,6 @@
 GshaderToMshader::GshaderToMshader()
 {
 	title = "task_mesh_migration";
-
-	set_api_version(VK_API_VERSION_1_1);
-	add_device_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
-	add_device_extension(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-	add_device_extension(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
-	vkb::GLSLCompiler::set_target_environment(glslang::EShTargetSpv, glslang::EShTargetSpv_1_4);
 }
 
 GshaderToMshader::~GshaderToMshader()
@@ -121,9 +115,9 @@ void GshaderToMshader::render(float delta_time)
  */
 void GshaderToMshader::prepare_uniform_buffers()
 {
-	uniform_buffer_vs = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(ubos[0]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	uniform_buffer_gs = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(ubos[1]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	uniform_buffer_ms = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(ubos[2]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer_vs = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(ubos[0]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer_gs = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(ubos[1]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer_ms = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(ubos[2]), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	update_uniform_buffers();
 }
 
@@ -135,10 +129,11 @@ void GshaderToMshader::update_uniform_buffers()
 {
 	for (auto &ubo : ubos)
 	{
-		ubo.proj  = camera.matrices.perspective;
-		ubo.view  = camera.matrices.view;
-		ubo.model = glm::mat4(1.f);
-		ubo.model = glm::rotate(ubo.model, glm::pi<float>(), glm::vec3(0, 0, 1));
+		ubo.proj   = camera.matrices.perspective;
+		ubo.view   = camera.matrices.view;
+		ubo.model  = glm::mat4(1.f);
+		ubo.model  = glm::rotate(ubo.model, glm::pi<float>(), glm::vec3(0, 0, 1));
+		ubo.normal = glm::transpose(glm::inverse(ubo.view * ubo.model));
 	}
 	uniform_buffer_vs->convert_and_update(ubos[0]);
 	uniform_buffer_gs->convert_and_update(ubos[1]);
@@ -148,18 +143,18 @@ void GshaderToMshader::update_uniform_buffers()
 void GshaderToMshader::prepare_pipelines()
 {
 	std::array<VkPipelineShaderStageCreateInfo, 2> model_stages;
-	model_stages[0] = load_shader("gshader_to_mshader/gshader_to_mshader.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	model_stages[1] = load_shader("gshader_to_mshader/gshader_to_mshader.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	model_stages[0] = load_shader("gshader_to_mshader", "gshader_to_mshader.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	model_stages[1] = load_shader("gshader_to_mshader", "gshader_to_mshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	std::array<VkPipelineShaderStageCreateInfo, 3> geometry_stages;
-	geometry_stages[0] = load_shader("gshader_to_mshader/gshader_to_mshader_base.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	geometry_stages[1] = load_shader("gshader_to_mshader/gshader_to_mshader_base.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
-	geometry_stages[2] = load_shader("gshader_to_mshader/gshader_to_mshader.geom", VK_SHADER_STAGE_GEOMETRY_BIT);
+	geometry_stages[0] = load_shader("gshader_to_mshader", "gshader_to_mshader_base.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	geometry_stages[1] = load_shader("gshader_to_mshader", "gshader_to_mshader_base.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	geometry_stages[2] = load_shader("gshader_to_mshader", "gshader_to_mshader.geom.spv", VK_SHADER_STAGE_GEOMETRY_BIT);
 
 	// task shader is not used, the amount of spawned mesh shaders is determined by amount of meshlets stored in the storage_buffer_object->vertex_indices
 	std::array<VkPipelineShaderStageCreateInfo, 2> mesh_stages;
-	mesh_stages[0] = load_shader("gshader_to_mshader/gshader_to_mshader.mesh", VK_SHADER_STAGE_MESH_BIT_EXT);
-	mesh_stages[1] = load_shader("gshader_to_mshader/gshader_to_mshader_mesh.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	mesh_stages[0] = load_shader("gshader_to_mshader", "gshader_to_mshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
+	mesh_stages[1] = load_shader("gshader_to_mshader", "gshader_to_mshader_mesh.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Dynamic State
 	std::vector<VkDynamicState> dynamic_state_enables = {
@@ -425,10 +420,18 @@ void GshaderToMshader::on_update_ui_overlay(vkb::Drawer &drawer)
 	}
 }
 
-void GshaderToMshader::request_gpu_features(vkb::PhysicalDevice &gpu)
+void GshaderToMshader::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
 {
-	auto &requested_vertex_input_features      = gpu.request_extension_features<VkPhysicalDeviceMeshShaderFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT);
-	requested_vertex_input_features.meshShader = VK_TRUE;
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_MESH_SHADER_EXTENSION_NAME]           = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_SPIRV_1_4_EXTENSION_NAME]             = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void GshaderToMshader::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceMeshShaderFeaturesEXT, meshShader);
 
 	if (gpu.get_features().geometryShader)
 	{

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024 Holochip Corporation
+/* Copyright (c) 2023-2026 Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,7 +23,6 @@
 #pragma once
 
 #include "api_vulkan_sample.h"
-#include "glsl_compiler.h"
 
 class MeshShading : public ApiVulkanSample
 {
@@ -36,7 +35,8 @@ class MeshShading : public ApiVulkanSample
 	MeshShading();
 	~MeshShading() override;
 
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 
 	void prepare_pipelines();
 	void build_command_buffers() override;
@@ -45,4 +45,4 @@ class MeshShading : public ApiVulkanSample
 	void render(float delta_time) override;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_mesh_shading();
+std::unique_ptr<vkb::VulkanSampleC> create_mesh_shading();

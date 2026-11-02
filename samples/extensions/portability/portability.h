@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Holochip
+/* Copyright (c) 2022-2026, Holochip
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,7 +28,7 @@ class Portability : public ApiVulkanSample
   public:
 	bool bloom             = true;
 	bool display_skysphere = true;
-#ifdef VK_ENABLE_BETA_EXTENSIONS
+#ifdef VKB_ENABLE_PORTABILITY
 	VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_features{};
 #endif
 
@@ -45,7 +45,7 @@ class Portability : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> matrices;
+		std::unique_ptr<vkb::core::BufferC> matrices;
 	} uniform_buffers;
 
 	struct UBOVS
@@ -128,7 +128,7 @@ class Portability : public ApiVulkanSample
 
 	Portability();
 	~Portability() override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void build_command_buffers() override;
 	void create_attachment(VkFormat format, VkImageUsageFlagBits usage, FrameBufferAttachment *attachment);
 	void prepare_offscreen_buffer();
@@ -144,6 +144,11 @@ class Portability : public ApiVulkanSample
 	void render(float delta_time) override;
 	void on_update_ui_overlay(vkb::Drawer &drawer) override;
 	bool resize(const uint32_t width, const uint32_t height) override;
+
+  private:
+	// from vkb::VulkanSample
+	uint32_t get_api_version() const override;
+	void     request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
 };
 
 std::unique_ptr<vkb::Application> create_portability();

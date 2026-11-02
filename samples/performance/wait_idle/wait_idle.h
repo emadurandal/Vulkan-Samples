@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2025, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,7 +22,7 @@
 #include "scene_graph/components/perspective_camera.h"
 #include "vulkan_sample.h"
 
-class WaitIdle : public vkb::VulkanSample<vkb::BindingType::C>
+class WaitIdle : public vkb::VulkanSampleC
 {
   public:
 	WaitIdle();
@@ -35,10 +35,10 @@ class WaitIdle : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @brief This RenderContext is responsible containing the scene's RenderFrames
 	 *		  It implements a custom wait_frame function which alternates between waiting with WaitIdle or Fences
 	 */
-	class CustomRenderContext : public vkb::RenderContext
+	class CustomRenderContext : public vkb::rendering::RenderContextC
 	{
 	  public:
-		CustomRenderContext(vkb::Device &device, VkSurfaceKHR surface, const vkb::Window &window, int &wait_idle_enabled);
+		CustomRenderContext(vkb::core::DeviceC &device, VkSurfaceKHR surface, const vkb::Window &window, int &wait_idle_enabled);
 
 		virtual void wait_frame() override;
 
@@ -56,4 +56,4 @@ class WaitIdle : public vkb::VulkanSample<vkb::BindingType::C>
 	int wait_idle_enabled{0};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_wait_idle();
+std::unique_ptr<vkb::VulkanSampleC> create_wait_idle();

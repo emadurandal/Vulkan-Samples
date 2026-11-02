@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2021-2024, Holochip Corporation
+ * Copyright (c) 2021-2026, Holochip Corporation
+ * Copyright (c) 2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,11 +23,6 @@ DynamicRendering::DynamicRendering() :
     enable_dynamic(true)
 {
 	title = "Dynamic Rendering";
-
-	// Dynamic Rendering is a Vulkan 1.2 extension
-	set_api_version(VK_API_VERSION_1_2);
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
 }
 
 DynamicRendering::~DynamicRendering()
@@ -45,6 +41,12 @@ DynamicRendering::~DynamicRendering()
 		vkDestroyDescriptorSetLayout(get_device().get_handle(), descriptor_set_layout, VK_NULL_HANDLE);
 		vkDestroyDescriptorPool(get_device().get_handle(), descriptor_pool, VK_NULL_HANDLE);
 	}
+}
+
+uint32_t DynamicRendering::get_api_version() const
+{
+	// Dynamic Rendering is a Vulkan 1.2 extension
+	return VK_API_VERSION_1_2;
 }
 
 bool DynamicRendering::prepare(const vkb::ApplicationOptions &options)
@@ -78,10 +80,6 @@ bool DynamicRendering::prepare(const vkb::ApplicationOptions &options)
 	create_descriptor_pool();
 	setup_descriptor_set_layout();
 	create_descriptor_sets();
-	if (!enable_dynamic)
-	{
-		create_render_pass_non_dynamic();
-	}
 	create_pipeline();
 	build_command_buffers();
 	prepared = true;
@@ -89,12 +87,18 @@ bool DynamicRendering::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-void DynamicRendering::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DynamicRendering::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void DynamicRendering::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	if (enable_dynamic)
 	{
-		auto &requested_dynamic_rendering            = gpu.request_extension_features<VkPhysicalDeviceDynamicRenderingFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR);
-		requested_dynamic_rendering.dynamicRendering = VK_TRUE;
+		REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDynamicRenderingFeaturesKHR, dynamicRendering);
 	}
 
 	if (gpu.get_features().samplerAnisotropy)
@@ -115,7 +119,7 @@ void DynamicRendering::load_assets()
 
 void DynamicRendering::prepare_uniform_buffers()
 {
-	ubo = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(ubo_vs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	ubo = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(ubo_vs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -251,8 +255,8 @@ void DynamicRendering::create_pipeline()
 	vertex_input_state.pVertexAttributeDescriptions         = vertex_input_attributes.data();
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{};
-	shader_stages[0] = load_shader("dynamic_rendering", "gbuffer.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("dynamic_rendering", "gbuffer.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("dynamic_rendering", "gbuffer.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("dynamic_rendering", "gbuffer.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Create graphics pipeline for dynamic rendering
 	VkFormat color_rendering_format = get_render_context().get_format();
@@ -312,8 +316,20 @@ void DynamicRendering::create_pipeline()
 	vkCreateGraphicsPipelines(get_device().get_handle(), VK_NULL_HANDLE, 1, &graphics_create, VK_NULL_HANDLE, &model_pipeline);
 }
 
-void DynamicRendering::create_render_pass_non_dynamic()
+void DynamicRendering::setup_render_pass()
 {
+	if (!enable_dynamic)
+	{
+		ApiVulkanSample::setup_render_pass();
+	}
+}
+
+void DynamicRendering::setup_framebuffer()
+{
+	if (!enable_dynamic)
+	{
+		ApiVulkanSample::setup_framebuffer();
+	}
 }
 
 void DynamicRendering::draw()
@@ -355,8 +371,6 @@ void DynamicRendering::build_command_buffers()
 			// object
 			vkCmdBindPipeline(draw_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, model_pipeline);
 			draw_model(object, draw_cmd_buffer);
-
-			// Note: This sample does not render a UI, as the framework's UI overlay doesn't handle dynamic rendering
 		};
 
 		VkImageSubresourceRange range{};
@@ -373,6 +387,10 @@ void DynamicRendering::build_command_buffers()
 		{
 			vkb::image_layout_transition(draw_cmd_buffer,
 			                             swapchain_buffers[i].image,
+			                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			                             0,
+			                             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			                             VK_IMAGE_LAYOUT_UNDEFINED,
 			                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			                             range);
@@ -412,6 +430,8 @@ void DynamicRendering::build_command_buffers()
 			draw_scene();
 			vkCmdEndRenderingKHR(draw_cmd_buffer);
 
+			draw_ui(draw_cmd_buffer, i);
+
 			vkb::image_layout_transition(draw_cmd_buffer,
 			                             swapchain_buffers[i].image,
 			                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -425,12 +445,13 @@ void DynamicRendering::build_command_buffers()
 			render_pass_begin_info.framebuffer              = framebuffers[i];
 			render_pass_begin_info.renderArea.extent.width  = width;
 			render_pass_begin_info.renderArea.extent.height = height;
-			render_pass_begin_info.clearValueCount          = 3;
+			render_pass_begin_info.clearValueCount          = static_cast<uint32_t>(clear_values.size());
 			render_pass_begin_info.pClearValues             = clear_values.data();
 
 			vkCmdBeginRenderPass(draw_cmd_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
 			draw_scene();
+			draw_ui(draw_cmd_buffer);
 
 			vkCmdEndRenderPass(draw_cmd_buffer);
 		}
@@ -460,7 +481,7 @@ void DynamicRendering::on_update_ui_overlay(vkb::Drawer &drawer)
 {
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_dynamic_rendering()
+std::unique_ptr<vkb::VulkanSampleC> create_dynamic_rendering()
 {
 	return std::make_unique<DynamicRendering>();
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -16,10 +16,10 @@
  */
 
 #include "resource_replay.h"
-
 #include "common/vk_common.h"
 #include "core/util/logging.hpp"
 #include "rendering/pipeline_state.h"
+#include "rendering/render_target.h"
 #include "resource_cache.h"
 
 namespace vkb
@@ -38,16 +38,6 @@ inline void read_subpass_info(std::istringstream &is, std::vector<SubpassInfo> &
 	}
 }
 
-inline void read_processes(std::istringstream &is, std::vector<std::string> &value)
-{
-	std::size_t size;
-	read(is, size);
-	value.resize(size);
-	for (std::string &item : value)
-	{
-		read(is, item);
-	}
-}
 }        // namespace
 
 ResourceReplay::ResourceReplay()
@@ -91,23 +81,18 @@ void ResourceReplay::play(ResourceCache &resource_cache, ResourceRecord &recorde
 
 void ResourceReplay::create_shader_module(ResourceCache &resource_cache, std::istringstream &stream)
 {
-	VkShaderStageFlagBits    stage{};
-	std::string              glsl_source;
-	std::string              entry_point;
-	std::string              preamble;
-	std::vector<std::string> processes;
+	VkShaderStageFlagBits stage{};
+	std::string           glsl_source;
+	std::string           entry_point;
 
 	read(stream,
 	     stage,
 	     glsl_source,
-	     entry_point,
-	     preamble);
+	     entry_point);
 
-	read_processes(stream, processes);
-
-	ShaderSource shader_source{};
+	vkb::core::ShaderSource shader_source{};
 	shader_source.set_source(std::move(glsl_source));
-	ShaderVariant shader_variant(std::move(preamble), std::move(processes));
+	vkb::core::ShaderVariant shader_variant;
 
 	auto &shader_module = resource_cache.request_shader_module(stage, shader_source, shader_variant);
 
@@ -121,7 +106,7 @@ void ResourceReplay::create_pipeline_layout(ResourceCache &resource_cache, std::
 	read(stream,
 	     shader_indices);
 
-	std::vector<ShaderModule *> shader_stages(shader_indices.size());
+	std::vector<vkb::core::ShaderModuleC *> shader_stages(shader_indices.size());
 	std::transform(shader_indices.begin(),
 	               shader_indices.end(),
 	               shader_stages.begin(),
@@ -137,9 +122,9 @@ void ResourceReplay::create_pipeline_layout(ResourceCache &resource_cache, std::
 
 void ResourceReplay::create_render_pass(ResourceCache &resource_cache, std::istringstream &stream)
 {
-	std::vector<Attachment>    attachments;
-	std::vector<LoadStoreInfo> load_store_infos;
-	std::vector<SubpassInfo>   subpasses;
+	std::vector<vkb::rendering::AttachmentC> attachments;
+	std::vector<LoadStoreInfo>               load_store_infos;
+	std::vector<SubpassInfo>                 subpasses;
 
 	read(stream,
 	     attachments,
@@ -167,17 +152,17 @@ void ResourceReplay::create_graphics_pipeline(ResourceCache &resource_cache, std
 	read(stream,
 	     specialization_constant_state);
 
-	VertexInputState vertex_input_state{};
+	vkb::rendering::VertexInputStateC vertex_input_state{};
 
 	read(stream,
 	     vertex_input_state.attributes,
 	     vertex_input_state.bindings);
 
-	InputAssemblyState input_assembly_state{};
-	RasterizationState rasterization_state{};
-	ViewportState      viewport_state{};
-	MultisampleState   multisample_state{};
-	DepthStencilState  depth_stencil_state{};
+	vkb::rendering::InputAssemblyStateC input_assembly_state{};
+	vkb::rendering::RasterizationStateC rasterization_state{};
+	vkb::rendering::ViewportState       viewport_state{};
+	vkb::rendering::MultisampleStateC   multisample_state{};
+	vkb::rendering::DepthStencilStateC  depth_stencil_state{};
 
 	read(stream,
 	     input_assembly_state,
@@ -186,14 +171,14 @@ void ResourceReplay::create_graphics_pipeline(ResourceCache &resource_cache, std
 	     multisample_state,
 	     depth_stencil_state);
 
-	ColorBlendState color_blend_state{};
+	vkb::rendering::ColorBlendStateC color_blend_state{};
 
 	read(stream,
 	     color_blend_state.logic_op,
 	     color_blend_state.logic_op_enable,
 	     color_blend_state.attachments);
 
-	PipelineState pipeline_state{};
+	vkb::rendering::PipelineStateC pipeline_state{};
 	assert(pipeline_layout_index < pipeline_layouts.size());
 	pipeline_state.set_pipeline_layout(*pipeline_layouts[pipeline_layout_index]);
 	assert(render_pass_index < render_passes.size());

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024 Holochip Corporation
+/* Copyright (c) 2021-2026 Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -89,24 +89,6 @@ RaytracingExtended::RaytracingExtended() :
     index_count(0), pipeline(VK_NULL_HANDLE), pipeline_layout(VK_NULL_HANDLE), descriptor_set(VK_NULL_HANDLE), descriptor_set_layout(VK_NULL_HANDLE)
 {
 	title = "Ray tracing with extended features";
-
-	// SPIRV 1.4 requires Vulkan 1.1
-	set_api_version(VK_API_VERSION_1_1);
-
-	// Ray tracing related extensions required by this sample
-	add_device_extension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-	add_device_extension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-
-	// Required by VK_KHR_acceleration_structure
-	add_device_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-	add_device_extension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
-	add_device_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-
-	// Required for VK_KHR_ray_tracing_pipeline
-	add_device_extension(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-
-	// Required by VK_KHR_spirv_1_4
-	add_device_extension(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
 }
 
 RaytracingExtended::~RaytracingExtended()
@@ -133,24 +115,52 @@ RaytracingExtended::~RaytracingExtended()
 	}
 }
 
-void RaytracingExtended::request_gpu_features(vkb::PhysicalDevice &gpu)
+void RaytracingExtended::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Ray tracing related extensions required by this sample
+	requested_extensions[VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME]   = vkb::RequestMode::Required;
+
+	// Required by VK_KHR_acceleration_structure
+	requested_extensions[VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME]    = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME]      = vkb::RequestMode::Required;
+
+	// Required for VK_KHR_ray_tracing_pipeline
+	requested_extensions[VK_KHR_SPIRV_1_4_EXTENSION_NAME] = vkb::RequestMode::Required;
+
+	// Required by VK_KHR_spirv_1_4
+	requested_extensions[VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void RaytracingExtended::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable extension features required by this sample
 	// These are passed to device creation via a pNext structure chain
-	auto &requested_buffer_device_address_features                  = gpu.request_extension_features<VkPhysicalDeviceBufferDeviceAddressFeatures>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES);
-	requested_buffer_device_address_features.bufferDeviceAddress    = VK_TRUE;
-	auto &requested_ray_tracing_features                            = gpu.request_extension_features<VkPhysicalDeviceRayTracingPipelineFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR);
-	requested_ray_tracing_features.rayTracingPipeline               = VK_TRUE;
-	auto &requested_acceleration_structure_features                 = gpu.request_extension_features<VkPhysicalDeviceAccelerationStructureFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR);
-	requested_acceleration_structure_features.accelerationStructure = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceBufferDeviceAddressFeatures, bufferDeviceAddress);
 
-	auto &features = gpu.request_extension_features<VkPhysicalDeviceDescriptorIndexingFeaturesEXT>(
-	    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT);
-	features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceRayTracingPipelineFeaturesKHR, rayTracingPipeline);
+
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceAccelerationStructureFeaturesKHR, accelerationStructure);
+
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, shaderSampledImageArrayNonUniformIndexing);
 
 	if (gpu.get_features().samplerAnisotropy)
 	{
 		gpu.get_mutable_requested_features().samplerAnisotropy = true;
+	}
+
+	// Using this removes the need to explicitly force an image format inside the shader
+	if (gpu.get_features().shaderStorageImageReadWithoutFormat && gpu.get_features().shaderStorageImageWriteWithoutFormat)
+	{
+		gpu.get_mutable_requested_features().shaderStorageImageReadWithoutFormat  = VK_TRUE;
+		gpu.get_mutable_requested_features().shaderStorageImageWriteWithoutFormat = VK_TRUE;
+	}
+	else
+	{
+		throw std::runtime_error("Requested required feature shaderStorageImageReadWithoutFormat or shaderStorageImageWriteWithoutFormat is not supported");
 	}
 }
 
@@ -180,7 +190,7 @@ void RaytracingExtended::create_storage_image()
 	vkGetImageMemoryRequirements(get_device().get_handle(), storage_image.image, &memory_requirements);
 	VkMemoryAllocateInfo memory_allocate_info = vkb::initializers::memory_allocate_info();
 	memory_allocate_info.allocationSize       = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex      = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex      = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &storage_image.memory));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), storage_image.image, storage_image.memory, 0));
 
@@ -244,7 +254,7 @@ void RaytracingExtended::create_flame_model()
 	model.vertices      = vertices;
 	model.triangles     = indices_;
 	model.object_type   = OBJECT_FLAME;
-	model.texture_index = raytracing_scene->imageInfos.size();
+	model.texture_index = static_cast<uint32_t>(raytracing_scene->imageInfos.size());
 	VkDescriptorImageInfo image_info;
 	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	image_info.imageView   = flame_texture.image->get_vk_image_view().get_handle();
@@ -280,11 +290,11 @@ void RaytracingExtended::create_static_object_buffers()
 	auto index_buffer_size  = nTotalTriangles * sizeof(Triangle);
 
 	// Create a staging buffer. (If staging buffer use is disabled, then this will be the final buffer)
-	std::unique_ptr<vkb::core::Buffer>  staging_vertex_buffer = nullptr, staging_index_buffer = nullptr;
+	std::unique_ptr<vkb::core::BufferC> staging_vertex_buffer = nullptr, staging_index_buffer = nullptr;
 	static constexpr VkBufferUsageFlags buffer_usage_flags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 	const VkBufferUsageFlags            staging_flags      = scene_options.use_vertex_staging_buffer ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : buffer_usage_flags;
-	staging_vertex_buffer                                  = std::make_unique<vkb::core::Buffer>(get_device(), vertex_buffer_size, staging_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	staging_index_buffer                                   = std::make_unique<vkb::core::Buffer>(get_device(), index_buffer_size, staging_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	staging_vertex_buffer                                  = std::make_unique<vkb::core::BufferC>(get_device(), vertex_buffer_size, staging_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	staging_index_buffer                                   = std::make_unique<vkb::core::BufferC>(get_device(), index_buffer_size, staging_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	// Copy over the data for each of the models
 	for (size_t i = 0; i < models.size(); ++i)
@@ -297,26 +307,26 @@ void RaytracingExtended::create_static_object_buffers()
 	// now transfer over to the end buffer
 	if (scene_options.use_vertex_staging_buffer)
 	{
-		auto &cmd = get_device().request_command_buffer();
-		cmd.begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, VK_NULL_HANDLE);
-		auto copy = [this, &cmd](vkb::core::Buffer &staging_buffer) {
-			auto output_buffer = std::make_unique<vkb::core::Buffer>(get_device(), staging_buffer.get_size(), buffer_usage_flags | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
-			cmd.copy_buffer(staging_buffer, *output_buffer, staging_buffer.get_size());
+		auto cmd = get_device().get_command_pool().request_command_buffer();
+		cmd->begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, VK_NULL_HANDLE);
+		auto copy = [this, &cmd](vkb::core::BufferC &staging_buffer) {
+			auto output_buffer = std::make_unique<vkb::core::BufferC>(get_device(), staging_buffer.get_size(), buffer_usage_flags | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+			cmd->copy_buffer(staging_buffer, *output_buffer, staging_buffer.get_size());
 
 			vkb::BufferMemoryBarrier barrier;
 			barrier.src_stage_mask  = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			barrier.dst_stage_mask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 			barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
 			barrier.dst_access_mask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-			cmd.buffer_memory_barrier(*output_buffer, 0, VK_WHOLE_SIZE, barrier);
+			cmd->buffer_memory_barrier(*output_buffer, 0, VK_WHOLE_SIZE, barrier);
 			return output_buffer;
 		};
 		vertex_buffer = copy(*staging_vertex_buffer);
 		index_buffer  = copy(*staging_index_buffer);
 
-		cmd.end();
+		cmd->end();
 		auto &queue = get_device().get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0);
-		queue.submit(cmd, get_device().request_fence());
+		queue.submit(*cmd, get_device().get_fence_pool().request_fence());
 		get_device().get_fence_pool().wait();
 	}
 	else
@@ -371,7 +381,7 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 		VkTransformMatrixKHR transform_matrix = model_buffer.default_transform;
 		if (!model_buffer.transform_matrix_buffer || model_buffer.transform_matrix_buffer->get_size() != sizeof(transform_matrix))
 		{
-			model_buffer.transform_matrix_buffer = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(transform_matrix), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
+			model_buffer.transform_matrix_buffer = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(transform_matrix), buffer_usage_flags, VMA_MEMORY_USAGE_CPU_TO_GPU);
 		}
 		model_buffer.transform_matrix_buffer->update(&transform_matrix, sizeof(transform_matrix));
 
@@ -381,13 +391,16 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 			model_buffer.bottom_level_acceleration_structure = std::make_unique<vkb::core::AccelerationStructure>(
 			    get_device(), VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
 			model_buffer.object_id = model_buffer.bottom_level_acceleration_structure->add_triangle_geometry(
-			    model_buffer.is_static ? vertex_buffer : dynamic_vertex_buffer,
-			    model_buffer.is_static ? index_buffer : dynamic_index_buffer,
-			    model_buffer.transform_matrix_buffer,
-			    model_buffer.num_triangles,
-			    model_buffer.num_vertices,
+			    model_buffer.is_static ? *vertex_buffer : *dynamic_vertex_buffer,
+			    model_buffer.is_static ? *index_buffer : *dynamic_index_buffer,
+			    *model_buffer.transform_matrix_buffer,
+			    static_cast<uint32_t>(model_buffer.num_triangles),
+			    static_cast<uint32_t>(model_buffer.num_vertices) - 1,
 			    sizeof(NewVertex),
-			    0, VK_FORMAT_R32G32B32_SFLOAT, VK_GEOMETRY_OPAQUE_BIT_KHR,
+			    0,
+			    VK_FORMAT_R32G32B32_SFLOAT,
+			    VK_INDEX_TYPE_UINT32,
+			    VK_GEOMETRY_OPAQUE_BIT_KHR,
 			    model_buffer.vertex_offset + (model_buffer.is_static ? static_vertex_handle : dynamic_vertex_handle),
 			    model_buffer.index_offset + (model_buffer.is_static ? static_index_handle : dynamic_index_handle));
 		}
@@ -398,13 +411,14 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 			    dynamic_vertex_buffer,
 			    dynamic_index_buffer,
 			    model_buffer.transform_matrix_buffer,
-			    model_buffer.num_triangles,
-			    model_buffer.num_vertices,
+			    static_cast<uint32_t>(model_buffer.num_triangles),
+			    static_cast<uint32_t>(model_buffer.num_vertices) - 1,
 			    sizeof(NewVertex),
 			    0, VK_FORMAT_R32G32B32_SFLOAT, VK_GEOMETRY_OPAQUE_BIT_KHR,
 			    model_buffer.vertex_offset + (model_buffer.is_static ? static_vertex_handle : dynamic_vertex_handle),
 			    model_buffer.index_offset + (model_buffer.is_static ? static_index_handle : dynamic_index_handle));
 		}
+		model_buffer.bottom_level_acceleration_structure->set_scrach_buffer_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment);
 		model_buffer.bottom_level_acceleration_structure->build(queue,
 		                                                        model_buffer.is_static ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR : VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR,
 		                                                        is_update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR);
@@ -458,6 +472,7 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 		uint32_t primitive_count = model_buffer.num_triangles;
 
 		auto &acceleration_structure_build_sizes_info = model_buffer.buildSize;
+		acceleration_structure_build_sizes_info.pNext = nullptr;
 		acceleration_structure_build_sizes_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 		vkGetAccelerationStructureBuildSizesKHR(
 		    get_device().get_handle(),
@@ -470,7 +485,7 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 		auto &bottom_level_acceleration_structure = model_buffer.bottom_level_acceleration_structure;
 		if (!bottom_level_acceleration_structure.buffer || bottom_level_acceleration_structure.buffer->get_size() != model_buffer.buildSize.accelerationStructureSize)
 		{
-			bottom_level_acceleration_structure.buffer = std::make_unique<vkb::core::Buffer>(
+			bottom_level_acceleration_structure.buffer = std::make_unique<vkb::core::BufferC>(
 			    get_device(),
 			    model_buffer.buildSize.accelerationStructureSize,
 			    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -490,10 +505,11 @@ void RaytracingExtended::create_bottom_level_acceleration_structure(bool is_upda
 		// The actual build process starts here
 
 		// Create a scratch buffer as a temporary storage for the acceleration structure build
-		auto scratch_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-		                                                          model_buffer.buildSize.buildScratchSize,
-		                                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+		auto scratch_buffer = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(model_buffer.buildSize.buildScratchSize)
+		                                                                             .with_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+		                                                                             .with_vma_usage(VMA_MEMORY_USAGE_GPU_ONLY)
+		                                                                             .with_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment));
+
 		{
 			VkAccelerationStructureBuildGeometryInfoKHR acceleration_build_geometry_info{};
 			acceleration_build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -595,8 +611,8 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 		auto &model_buffer = raytracing_scene->model_buffers[i];
 
 		SceneInstanceData scene_instance{};
-		scene_instance.vertex_index  = model_buffer.vertex_offset / sizeof(NewVertex);
-		scene_instance.indices_index = model_buffer.index_offset / sizeof(Triangle);
+		scene_instance.vertex_index  = static_cast<uint32_t>(model_buffer.vertex_offset / sizeof(NewVertex));
+		scene_instance.indices_index = static_cast<uint32_t>(model_buffer.index_offset / sizeof(Triangle));
 		scene_instance.object_type   = model_buffer.object_type;
 		scene_instance.image_index   = model_buffer.texture_index;
 		ASSERT_LOG(scene_instance.object_type == ObjectType::OBJECT_REFRACTION || scene_instance.image_index < raytracing_scene->imageInfos.size(), "Only the refraction model can be texture less.")
@@ -606,10 +622,10 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 		switch (model_buffer.object_type)
 		{
 			case (ObjectType::OBJECT_NORMAL):
-				add_instance(model_buffer, transform_matrix, i);
+				add_instance(model_buffer, transform_matrix, static_cast<uint32_t>(i));
 				break;
 			case (ObjectType::OBJECT_REFRACTION):
-				add_instance(model_buffer, calculate_rotation({-0.25, -2.5, -2.35}, 1.f, true), i);
+				add_instance(model_buffer, calculate_rotation({-0.25, -2.5, -2.35}, 1.f, true), static_cast<uint32_t>(i));
 				break;
 			default:
 				// handle flame separately
@@ -620,12 +636,12 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 	{
 		// find the flame particle object, then add the particles as instances
 		auto &model_buffers = raytracing_scene->model_buffers;
-		auto  iter          = std::find_if(model_buffers.begin(), model_buffers.end(), [](const ModelBuffer &model_buffer) {
+		auto  iter          = std::ranges::find_if(model_buffers, [](const ModelBuffer &model_buffer) {
             return model_buffer.object_type == ObjectType::OBJECT_FLAME;
         });
 		ASSERT_LOG(iter != model_buffers.cend(), "Can't find flame object.")
 		auto    &model_buffer = *iter;
-		uint32_t index        = std::distance(model_buffers.begin(), iter);
+		uint32_t index        = static_cast<uint32_t>(std::distance(model_buffers.begin(), iter));
 		for (auto &&particle : flame_generator.particles)
 		{
 			add_instance(model_buffer, calculate_rotation(particle.position, 0.25f, true), index);
@@ -635,17 +651,17 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 	size_t data_to_model_size = model_instance_data.size() * sizeof(model_instance_data[0]);
 	if (!data_to_model_buffer || data_to_model_buffer->get_size() < data_to_model_size)
 	{
-		data_to_model_buffer = std::make_unique<vkb::core::Buffer>(get_device(), data_to_model_size, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		data_to_model_buffer = std::make_unique<vkb::core::BufferC>(get_device(), data_to_model_size, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 	data_to_model_buffer->update(model_instance_data.data(), data_to_model_size, 0);
 
 	const size_t instancesDataSize = sizeof(VkAccelerationStructureInstanceKHR) * instances.size();
 	if (!instances_buffer || instances_buffer->get_size() != instancesDataSize)
 	{
-		instances_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-		                                                       instancesDataSize,
-		                                                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		                                                       VMA_MEMORY_USAGE_CPU_TO_GPU);
+		instances_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+		                                                        instancesDataSize,
+		                                                        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		                                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 	instances_buffer->update(instances.data(), instancesDataSize);
 
@@ -653,12 +669,13 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 	// Top Level AS with single instance
 	if (instance_uid == std::numeric_limits<uint64_t>::max())        // test if first time adding
 	{
-		instance_uid = top_level_acceleration_structure->add_instance_geometry(instances_buffer, instances.size());
+		instance_uid = top_level_acceleration_structure->add_instance_geometry(instances_buffer, static_cast<uint32_t>(instances.size()));
 	}
 	else
 	{
-		top_level_acceleration_structure->update_instance_geometry(instance_uid, instances_buffer, instances.size());
+		top_level_acceleration_structure->update_instance_geometry(instance_uid, instances_buffer, static_cast<uint32_t>(instances.size()));
 	}
+	top_level_acceleration_structure->set_scrach_buffer_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment);
 	top_level_acceleration_structure->build(queue);
 #else
 	VkDeviceOrHostAddressConstKHR instance_data_device_address{};
@@ -695,7 +712,7 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 	// Create a buffer to hold the acceleration structure
 	if (top_level_acceleration_structure.buffer == nullptr)
 	{
-		top_level_acceleration_structure.buffer = std::make_unique<vkb::core::Buffer>(
+		top_level_acceleration_structure.buffer = std::make_unique<vkb::core::BufferC>(
 		    get_device(),
 		    acceleration_structure_build_sizes_info.accelerationStructureSize,
 		    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -722,10 +739,11 @@ void RaytracingExtended::create_top_level_acceleration_structure(bool print_time
 	// The actual build process starts here
 
 	// Create a scratch buffer as a temporary storage for the acceleration structure build
-	auto scratch_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                          acceleration_structure_build_sizes_info.buildScratchSize,
-	                                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-	                                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+	auto scratch_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                           vkb::core::BufferBuilderC(acceleration_structure_build_sizes_info.buildScratchSize)
+	                                                               .with_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT)
+	                                                               .with_vma_usage(VMA_MEMORY_USAGE_GPU_ONLY)
+	                                                               .with_alignment(acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment));
 
 	VkAccelerationStructureBuildGeometryInfoKHR acceleration_build_geometry_info{};
 	acceleration_build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -779,7 +797,7 @@ namespace
 template <typename T>
 struct CopyBuffer
 {
-	std::vector<T> operator()(std::unordered_map<std::string, vkb::core::Buffer> &buffers, const char *buffer_name)
+	std::vector<T> operator()(std::unordered_map<std::string, vkb::core::BufferC> &buffers, const char *buffer_name)
 	{
 		auto iter = buffers.find(buffer_name);
 		if (iter == buffers.cend())
@@ -857,9 +875,21 @@ void RaytracingExtended::create_shader_binding_tables()
 
 	// Raygen
 	// Create binding table buffers for each shader type
-	raygen_shader_binding_table = std::make_unique<vkb::core::Buffer>(get_device(), handle_size, sbt_buffer_usage_flags, sbt_memory_usage, 0);
-	miss_shader_binding_table   = std::make_unique<vkb::core::Buffer>(get_device(), handle_size, sbt_buffer_usage_flags, sbt_memory_usage, 0);
-	hit_shader_binding_table    = std::make_unique<vkb::core::Buffer>(get_device(), handle_size, sbt_buffer_usage_flags, sbt_memory_usage, 0);
+	raygen_shader_binding_table = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size)
+	                                                                                     .with_usage(sbt_buffer_usage_flags)
+	                                                                                     .with_vma_usage(sbt_memory_usage)
+	                                                                                     .with_vma_flags(0)
+	                                                                                     .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
+	miss_shader_binding_table   = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size)
+                                                                                       .with_usage(sbt_buffer_usage_flags)
+                                                                                       .with_vma_usage(sbt_memory_usage)
+                                                                                       .with_vma_flags(0)
+                                                                                       .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
+	hit_shader_binding_table    = std::make_unique<vkb::core::BufferC>(get_device(), vkb::core::BufferBuilderC(handle_size)
+                                                                                      .with_usage(sbt_buffer_usage_flags)
+                                                                                      .with_vma_usage(sbt_memory_usage)
+                                                                                      .with_vma_flags(0)
+                                                                                      .with_alignment(ray_tracing_pipeline_properties.shaderGroupBaseAlignment));
 
 	// Copy the pipeline's shader handles into a host buffer
 	std::vector<uint8_t> shader_handle_storage(sbt_size);
@@ -931,7 +961,7 @@ void RaytracingExtended::create_descriptor_sets()
 	VkWriteDescriptorSet vertex_buffer_write         = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &vertex_descriptor);
 	VkWriteDescriptorSet index_buffer_write          = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &index_descriptor);
 	VkWriteDescriptorSet data_map_write              = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &data_map_descriptor);
-	VkWriteDescriptorSet texture_array_write         = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, raytracing_scene->imageInfos.data(), raytracing_scene->imageInfos.size());
+	VkWriteDescriptorSet texture_array_write         = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, raytracing_scene->imageInfos.data(), static_cast<uint32_t>(raytracing_scene->imageInfos.size()));
 	VkWriteDescriptorSet dynamic_vertex_buffer_write = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8, &dynamic_vertex_descriptor);
 	VkWriteDescriptorSet dynamic_index_buffer_write  = vkb::initializers::write_descriptor_set(descriptor_set, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 9, &dynamic_index_descriptor);
 
@@ -991,8 +1021,8 @@ void RaytracingExtended::create_dynamic_object_buffers(float time)
 	if (!dynamic_vertex_buffer || !dynamic_index_buffer)
 	{
 		// note these flags are different because they will be read/write, in contrast to static
-		dynamic_vertex_buffer = std::make_unique<vkb::core::Buffer>(get_device(), vertex_buffer_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-		dynamic_index_buffer  = std::make_unique<vkb::core::Buffer>(get_device(), index_buffer_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		dynamic_vertex_buffer = std::make_unique<vkb::core::BufferC>(get_device(), vertex_buffer_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		dynamic_index_buffer  = std::make_unique<vkb::core::BufferC>(get_device(), index_buffer_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
 	dynamic_vertex_buffer->update(refraction_model.data(), vertex_buffer_size);
@@ -1059,7 +1089,7 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 	specializationMapEntries.push_back(vkb::initializers::specialization_map_entry(0, offsetof(SpecialConsts_s, renderMode), sizeof(uint32_t)));
 	specializationMapEntries.push_back(vkb::initializers::specialization_map_entry(1, offsetof(SpecialConsts_s, maxRays), sizeof(uint32_t)));
 	VkSpecializationInfo specializationInfo = vkb::initializers::specialization_info(
-	    specializationMapEntries.size(), &specializationMapEntries.front(), sizeof(SpecialConsts_s), &specialConsts);
+	    static_cast<uint32_t>(specializationMapEntries.size()), &specializationMapEntries.front(), sizeof(SpecialConsts_s), &specialConsts);
 
 	VkDescriptorSetLayoutBinding vertex_binding{};
 	vertex_binding.binding         = 4;
@@ -1082,7 +1112,7 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 	VkDescriptorSetLayoutBinding texture_array_binding{};
 	texture_array_binding.binding         = 7;
 	texture_array_binding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	texture_array_binding.descriptorCount = raytracing_scene->imageInfos.size();
+	texture_array_binding.descriptorCount = static_cast<uint32_t>(raytracing_scene->imageInfos.size());
 	texture_array_binding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding dynamic_vertex_binding{};
@@ -1121,9 +1151,6 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 
 	VK_CHECK(vkCreatePipelineLayout(get_device().get_handle(), &pipeline_layout_create_info, nullptr, &pipeline_layout));
 
-	// Ray tracing shaders require SPIR-V 1.4, so we need to set the appropriate target environment for the GLSLang compiler
-	vkb::GLSLCompiler::set_target_environment(glslang::EShTargetSpv, glslang::EShTargetSpv_1_4);
-
 	/*
 	    Setup ray tracing shader groups
 	    Each shader group points at the corresponding shader in the pipeline
@@ -1132,7 +1159,7 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 
 	// Ray generation group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_extended", "raygen.rgen", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_extended", "raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 		shader_stages.back().pSpecializationInfo = &specializationInfo;
 		VkRayTracingShaderGroupCreateInfoKHR raygen_group_ci{};
 		raygen_group_ci.sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -1146,7 +1173,7 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 
 	// Ray miss group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_extended", "miss.rmiss", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_extended", "miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR miss_group_ci{};
 		miss_group_ci.sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		miss_group_ci.type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -1159,7 +1186,7 @@ void RaytracingExtended::create_ray_tracing_pipeline()
 
 	// Ray closest hit group
 	{
-		shader_stages.push_back(load_shader("ray_tracing_extended", "closesthit.rchit", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shader_stages.push_back(load_shader("ray_tracing_extended", "closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		shader_stages.back().pSpecializationInfo = &specializationInfo;
 		VkRayTracingShaderGroupCreateInfoKHR closes_hit_group_ci{};
 		closes_hit_group_ci.sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -1207,10 +1234,10 @@ void RaytracingExtended::delete_acceleration_structure(AccelerationStructureExte
 */
 void RaytracingExtended::create_uniform_buffer()
 {
-	ubo = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                          sizeof(uniform_data),
-	                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+	ubo = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                           sizeof(uniform_data),
+	                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                           VMA_MEMORY_USAGE_CPU_TO_GPU);
 	ubo->convert_and_update(uniform_data);
 	update_uniform_buffers();
 }
@@ -1241,7 +1268,7 @@ void RaytracingExtended::build_command_buffers()
 	auto command_pool = get_device().get_command_pool().get_handle();
 	if (!raytracing_command_buffers.empty())
 	{
-		vkFreeCommandBuffers(device_ptr, command_pool, raytracing_command_buffers.size(), &raytracing_command_buffers[0]);
+		vkFreeCommandBuffers(device_ptr, command_pool, static_cast<uint32_t>(raytracing_command_buffers.size()), &raytracing_command_buffers[0]);
 		raytracing_command_buffers.resize(0);
 	}
 
@@ -1297,7 +1324,7 @@ void RaytracingExtended::build_command_buffers()
 			}
 		}
 
-		auto getBufferBarrier = [](const vkb::core::Buffer &buffer) {
+		auto getBufferBarrier = [](const vkb::core::BufferC &buffer) {
 			VkBufferMemoryBarrier barrier = vkb::initializers::buffer_memory_barrier();
 			barrier.srcAccessMask         = VK_ACCESS_MEMORY_WRITE_BIT;
 			barrier.dstAccessMask         = VK_ACCESS_SHADER_READ_BIT;
@@ -1353,8 +1380,13 @@ bool RaytracingExtended::prepare(const vkb::ApplicationOptions &options)
 	std::set<VkImageUsageFlagBits> image_usage_flags = {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT};
 	get_render_context().update_swapchain(image_usage_flags);
 
+	// Get the acceleration structure properties
+	acceleration_structure_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+
 	// Get the ray tracing pipeline properties, which we'll need later on in the sample
 	ray_tracing_pipeline_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+	ray_tracing_pipeline_properties.pNext = &acceleration_structure_properties;
+
 	VkPhysicalDeviceProperties2 device_properties{};
 	device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
 	device_properties.pNext = &ray_tracing_pipeline_properties;
@@ -1396,7 +1428,7 @@ void RaytracingExtended::draw()
 	submit.commandBufferCount = 1;
 	submit.pCommandBuffers    = &raytracing_command_buffers[i];
 
-	VK_CHECK(vkQueueSubmit(queue, 1, &submit, get_device().request_fence()));
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit, get_device().get_fence_pool().request_fence()));
 	get_device().get_fence_pool().wait();
 
 	recreate_current_command_buffer();
@@ -1410,8 +1442,13 @@ void RaytracingExtended::draw()
 	// Prepare current swap chain image as transfer destination
 	vkb::image_layout_transition(draw_cmd_buffers[i],
 	                             get_render_context().get_swapchain().get_images()[i],
+	                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+	                             {},
+	                             VK_ACCESS_TRANSFER_WRITE_BIT,
 	                             VK_IMAGE_LAYOUT_UNDEFINED,
-	                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	                             subresource_range);
 
 	// Prepare ray tracing output image as transfer source
 	vkb::image_layout_transition(draw_cmd_buffers[i],
@@ -1453,7 +1490,7 @@ void RaytracingExtended::draw()
 
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers    = &draw_cmd_buffers[current_buffer];
-	VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, get_device().request_fence()));
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, get_device().get_fence_pool().request_fence()));
 	get_device().get_fence_pool().wait();
 	ApiVulkanSample::submit_frame();
 }
@@ -1478,12 +1515,12 @@ void RaytracingExtended::render(float delta_time)
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_ray_tracing_extended()
+std::unique_ptr<vkb::VulkanSampleC> create_ray_tracing_extended()
 {
 	return std::make_unique<RaytracingExtended>();
 }
 
-RaytracingExtended::RaytracingScene::RaytracingScene(vkb::Device &device, const std::vector<SceneLoadInfo> &scenesToLoad)
+RaytracingExtended::RaytracingScene::RaytracingScene(vkb::core::DeviceC &device, const std::vector<SceneLoadInfo> &scenesToLoad)
 {
 	vkb::GLTFLoader loader{device};
 	scenes.resize(scenesToLoad.size());
@@ -1517,7 +1554,7 @@ RaytracingExtended::RaytracingScene::RaytracingScene(vkb::Device &device, const 
 					VkDescriptorImageInfo imageInfo;
 					imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 					imageInfo.imageView   = image->get_vk_image_view().get_handle();
-					imageInfo.sampler     = baseTextureIter->second->get_sampler()->vk_sampler.get_handle();
+					imageInfo.sampler     = baseTextureIter->second->get_sampler()->get_core_sampler().get_handle();
 					imageInfos.push_back(imageInfo);
 				}
 

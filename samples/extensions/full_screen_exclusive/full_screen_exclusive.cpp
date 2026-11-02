@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Holochip Corporation
+/* Copyright (c) 2023-2026, Holochip Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,32 +17,38 @@
 
 #include "full_screen_exclusive.h"
 
+#include "common/macros.h"
 #include "filesystem/legacy.h"
-#include "glsl_compiler.h"
 #include "platform/window.h"
 
 #if defined(VKB_DEBUG) || defined(VKB_VALIDATION_LAYERS)
-static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type,
+static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+                                                     VkDebugUtilsMessageTypeFlagsEXT             message_type,
                                                      const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                                                      void                                       *user_data)
 {
-	(void) user_data;
-
-	if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+	// Log debug message
+	std::string message = fmt::format("Debug callback {}\n{}: {}",
+	                                  vk::to_string(static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(message_type)),
+	                                  callback_data->pMessageIdName,
+	                                  callback_data->pMessage);
+	switch (message_severity)
 	{
-		LOGE("{} Validation Layer: Error: {}: {}", callback_data->messageIdNumber, callback_data->pMessageIdName, callback_data->pMessage)
-	}
-	else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-	{
-		LOGE("{} Validation Layer: Warning: {}: {}", callback_data->messageIdNumber, callback_data->pMessageIdName, callback_data->pMessage)
-	}
-	else if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-	{
-		LOGI("{} Validation Layer: Performance warning: {}: {}", callback_data->messageIdNumber, callback_data->pMessageIdName, callback_data->pMessage)
-	}
-	else
-	{
-		LOGI("{} Validation Layer: Information: {}: {}", callback_data->messageIdNumber, callback_data->pMessageIdName, callback_data->pMessage)
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+			LOGD("{}", message);
+			break;
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+			LOGI("{}", message);
+			break;
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+			LOGW("{}", message);
+			break;
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+			LOGE("{}", message);
+			break;
+		default:
+			LOGE("Unknown message severity {}!\n{}", vk::to_string(static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(message_severity)), message);
+			break;
 	}
 	return VK_FALSE;
 }
@@ -68,60 +74,6 @@ bool FullScreenExclusive::validate_extensions(const std::vector<const char *> &r
 	}
 
 	return true;
-}
-
-bool FullScreenExclusive::validate_layers(const std::vector<const char *> &required, const std::vector<VkLayerProperties> &available)
-{
-	for (auto extension : required)
-	{
-		bool found = false;
-
-		for (auto &available_extension : available)
-		{
-			if (strcmp(available_extension.layerName, extension) == 0)
-			{
-				found = true;
-				break;
-			}
-		}
-
-		if (!found)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-VkShaderStageFlagBits FullScreenExclusive::find_shader_stage(const std::string &ext)
-{
-	if (ext == "vert")
-	{
-		return VK_SHADER_STAGE_VERTEX_BIT;
-	}
-	else if (ext == "frag")
-	{
-		return VK_SHADER_STAGE_FRAGMENT_BIT;
-	}
-	else if (ext == "comp")
-	{
-		return VK_SHADER_STAGE_COMPUTE_BIT;
-	}
-	else if (ext == "geom")
-	{
-		return VK_SHADER_STAGE_GEOMETRY_BIT;
-	}
-	else if (ext == "tesc")
-	{
-		return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-	}
-	else if (ext == "tese")
-	{
-		return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-	}
-
-	throw std::runtime_error("No Vulkan shader stage found for the file extension name.");
 }
 
 void FullScreenExclusive::init_instance(const std::vector<const char *> &required_instance_extensions, const std::vector<const char *> &required_validation_layers)
@@ -161,42 +113,40 @@ void FullScreenExclusive::init_instance(const std::vector<const char *> &require
 	{
 		throw std::runtime_error("Required instance extensions are missing.");
 	}
-	uint32_t instance_layer_count;
-	VK_CHECK(vkEnumerateInstanceLayerProperties(&instance_layer_count, nullptr));
-	std::vector<VkLayerProperties> supported_validation_layers(instance_layer_count);
-	VK_CHECK(vkEnumerateInstanceLayerProperties(&instance_layer_count, supported_validation_layers.data()));
-	std::vector<const char *> requested_validation_layers(required_validation_layers);
+
+	std::vector<const char *> requested_instance_layers(required_validation_layers);
 
 #if defined(VKB_DEBUG) || defined(VKB_VALIDATION_LAYERS)
-	// Determine the optimal validation layers to enable that are necessary for useful debugging
-	std::vector<const char *> optimal_validation_layers = vkb::get_optimal_validation_layers(supported_validation_layers);
-	requested_validation_layers.insert(requested_validation_layers.end(), optimal_validation_layers.begin(), optimal_validation_layers.end());
-#endif
+	char const *validationLayer = "VK_LAYER_KHRONOS_validation";
 
-	if (validate_layers(requested_validation_layers, supported_validation_layers))
+	uint32_t instance_layer_count;
+	VK_CHECK(vkEnumerateInstanceLayerProperties(&instance_layer_count, nullptr));
+
+	std::vector<VkLayerProperties> supported_instance_layers(instance_layer_count);
+	VK_CHECK(vkEnumerateInstanceLayerProperties(&instance_layer_count, supported_instance_layers.data()));
+
+	if (std::ranges::any_of(supported_instance_layers, [&validationLayer](auto const &lp) { return strcmp(lp.layerName, validationLayer) == 0; }))
 	{
-		LOGI("Enabled Validation Layers:")
-		for (const auto &layer : requested_validation_layers)
-		{
-			LOGI(" \t{}", layer)
-		}
+		requested_instance_layers.push_back(validationLayer);
+		LOGI("Enabled Validation Layer {}", validationLayer);
 	}
 	else
 	{
-		throw std::runtime_error("Required validation layers are missing.");
+		LOGW("Validation Layer {} is not available", validationLayer);
 	}
+#endif
 
 	VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
 	app.pApplicationName = "Full Screen Exclusive";
 	app.pEngineName      = "Vulkan Samples";
-	app.apiVersion       = VK_MAKE_VERSION(1, 0, 0);
+	app.apiVersion       = VK_API_VERSION_1_1;
 
 	VkInstanceCreateInfo instance_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
 	instance_info.pApplicationInfo        = &app;
 	instance_info.enabledExtensionCount   = vkb::to_u32(active_instance_extensions.size());
 	instance_info.ppEnabledExtensionNames = active_instance_extensions.data();
-	instance_info.enabledLayerCount       = vkb::to_u32(requested_validation_layers.size());
-	instance_info.ppEnabledLayerNames     = requested_validation_layers.data();
+	instance_info.enabledLayerCount       = vkb::to_u32(requested_instance_layers.size());
+	instance_info.ppEnabledLayerNames     = requested_instance_layers.data();
 
 #if defined(VKB_DEBUG) || defined(VKB_VALIDATION_LAYERS)
 	VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -277,7 +227,7 @@ void FullScreenExclusive::init_device(const std::vector<const char *> &required_
 		throw std::runtime_error("Required device extensions are missing, will try without.");
 	}
 
-	float queue_priority = 1.0f;
+	float queue_priority = 0.5f;
 
 	VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
 	queue_info.queueFamilyIndex = context.graphics_queue_index;
@@ -552,26 +502,12 @@ void FullScreenExclusive::init_render_pass()
 
 VkShaderModule FullScreenExclusive::load_shader_module(const char *path) const
 {
-	vkb::GLSLCompiler glsl_compiler;
+	std::vector<uint32_t> spirv = vkb::fs::read_shader_binary_u32(path);
 
-	auto buffer = vkb::fs::read_shader_binary(path);
-
-	std::string file_ext = path;
-
-	file_ext = file_ext.substr(file_ext.find_last_of('.') + 1);
-
-	std::vector<uint32_t> spirv;
-	std::string           info_log;
-
-	if (!glsl_compiler.compile_to_spirv(find_shader_stage(file_ext), buffer, "main", {}, spirv, info_log))
-	{
-		LOGE("Failed to compile shader, Error: {}", info_log.c_str())
-		return VK_NULL_HANDLE;
-	}
-
-	VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-	module_info.codeSize = spirv.size() * sizeof(uint32_t);
-	module_info.pCode    = spirv.data();
+	VkShaderModuleCreateInfo module_info{
+	    .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+	    .codeSize = spirv.size() * sizeof(uint32_t),
+	    .pCode    = spirv.data()};
 
 	VkShaderModule shader_module;
 	VK_CHECK(vkCreateShaderModule(context.device, &module_info, nullptr, &shader_module));
@@ -620,12 +556,12 @@ void FullScreenExclusive::init_pipeline()
 
 	shader_stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	shader_stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
-	shader_stages[0].module = load_shader_module("triangle.vert");
+	shader_stages[0].module = load_shader_module("triangle.vert.spv");
 	shader_stages[0].pName  = "main";
 
 	shader_stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	shader_stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-	shader_stages[1].module = load_shader_module("triangle.frag");
+	shader_stages[1].module = load_shader_module("triangle.frag.spv");
 	shader_stages[1].pName  = "main";
 
 	VkGraphicsPipelineCreateInfo pipe{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -665,7 +601,7 @@ VkResult FullScreenExclusive::acquire_next_image(uint32_t *image)
 
 	VkResult result = vkAcquireNextImageKHR(context.device, context.swapchain, UINT64_MAX, acquire_semaphore, VK_NULL_HANDLE, image);
 
-	if (result != VK_SUCCESS)
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 	{
 		context.recycled_semaphores.push_back(acquire_semaphore);
 		return result;
@@ -861,8 +797,6 @@ void FullScreenExclusive::teardown()
 		vkDestroyDebugUtilsMessengerEXT(context.instance, context.debug_callback, nullptr);
 		context.debug_callback = VK_NULL_HANDLE;
 	}
-
-	vk_instance.reset();
 }
 
 FullScreenExclusive::~FullScreenExclusive()
@@ -895,9 +829,7 @@ bool FullScreenExclusive::prepare(const vkb::ApplicationOptions &options)
 
 	init_instance({VK_KHR_SURFACE_EXTENSION_NAME}, {});
 
-	vk_instance = std::make_unique<vkb::Instance>(context.instance);
-
-	context.surface = window->create_surface(*vk_instance);
+	context.surface = window->create_surface(context.instance, nullptr);
 	if (!context.surface)
 		throw std::runtime_error("Failed to create window surface.");
 	auto &extent                        = window->get_extent();

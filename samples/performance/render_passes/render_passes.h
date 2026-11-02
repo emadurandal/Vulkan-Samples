@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2024, Arm Limited and Contributors
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,7 +26,7 @@
 /**
  * @brief Appropriate use of render pass attachment operations
  */
-class RenderPassesSample : public vkb::VulkanSample<vkb::BindingType::C>
+class RenderPassesSample : public vkb::VulkanSampleC
 {
   public:
 	RenderPassesSample();
@@ -58,7 +58,7 @@ class RenderPassesSample : public vkb::VulkanSample<vkb::BindingType::C>
   private:
 	void reset_stats_view() override;
 
-	void draw_renderpass(vkb::CommandBuffer &command_buffer, vkb::RenderTarget &render_target) override;
+	void draw_renderpass(vkb::core::CommandBufferC &command_buffer, vkb::rendering::RenderTargetC &render_target) override;
 
 	vkb::sg::PerspectiveCamera *camera{nullptr};
 
@@ -80,4 +80,4 @@ class RenderPassesSample : public vkb::VulkanSample<vkb::BindingType::C>
 	float frame_rate;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_render_passes();
+std::unique_ptr<vkb::VulkanSampleC> create_render_passes();

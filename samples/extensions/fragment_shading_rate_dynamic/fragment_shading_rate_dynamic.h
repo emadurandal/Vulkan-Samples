@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Holochip
+/* Copyright (c) 2021-2026, Holochip
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -31,7 +31,8 @@ class FragmentShadingRateDynamic : public ApiVulkanSample
 	~FragmentShadingRateDynamic() override;
 	bool prepare(const vkb::ApplicationOptions &options) override;
 	bool resize(uint32_t new_width, uint32_t new_height) override;
-	void request_gpu_features(vkb::PhysicalDevice &gpu) override;
+	void request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const override;
+	void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 	void render(float delta_time) override;
 	void build_command_buffers() override;
 	void setup_framebuffer() override;
@@ -97,7 +98,7 @@ class FragmentShadingRateDynamic : public ApiVulkanSample
 		uint32_t   n_rates;
 		uint32_t   _pad;
 	};
-	std::unique_ptr<vkb::core::Buffer> frequency_information_params;
+	std::unique_ptr<vkb::core::BufferC> frequency_information_params;
 
 	struct
 	{
@@ -121,7 +122,7 @@ class FragmentShadingRateDynamic : public ApiVulkanSample
 
 	struct
 	{
-		std::unique_ptr<vkb::core::Buffer> scene;
+		std::unique_ptr<vkb::core::BufferC> scene;
 	} uniform_buffers;
 
 	struct UBOScene
@@ -149,4 +150,4 @@ class FragmentShadingRateDynamic : public ApiVulkanSample
 	} push_const_block;
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_fragment_shading_rate_dynamic();
+std::unique_ptr<vkb::VulkanSampleC> create_fragment_shading_rate_dynamic();

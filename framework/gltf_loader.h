@@ -1,5 +1,5 @@
-/* Copyright (c) 2018-2024, Arm Limited and Contributors
- * Copyright (c) 2019-2024, Sascha Willems
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
+ * Copyright (c) 2019-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "common/vk_common.h"
 #include <memory>
 #include <mutex>
 
@@ -26,13 +27,25 @@
 #define TINYGLTF_NO_EXTERNAL_IMAGE
 #include <tiny_gltf.h>
 
+#include "scene_graph/components/sampler.h"
+#include "scene_graph/node.h"
+#include "scene_graph/scene.h"
 #include "timer.h"
 
+#include "vulkan/vulkan.h"
+
 #define KHR_LIGHTS_PUNCTUAL_EXTENSION "KHR_lights_punctual"
+#define KHR_GAUSSIAN_SPLATTING_EXTENSION "KHR_gaussian_splatting"
 
 namespace vkb
 {
+namespace core
+{
+template <vkb::BindingType bindingType>
 class Device;
+using DeviceCpp = Device<vkb::BindingType::Cpp>;
+using DeviceC   = Device<vkb::BindingType::C>;
+}        // namespace core
 
 namespace sg
 {
@@ -43,7 +56,6 @@ class Mesh;
 class Node;
 class PBRMaterial;
 class Sampler;
-class Scene;
 class SubMesh;
 class Texture;
 }        // namespace sg
@@ -69,20 +81,20 @@ struct TypeCast
 class GLTFLoader
 {
   public:
-	GLTFLoader(Device &device);
+	GLTFLoader(vkb::core::DeviceC &device);
 
 	virtual ~GLTFLoader() = default;
 
-	std::unique_ptr<sg::Scene> read_scene_from_file(const std::string &file_name, int scene_index = -1);
+	std::unique_ptr<vkb::scene_graph::SceneC> read_scene_from_file(const std::string &file_name, int scene_index = -1, VkBufferUsageFlags additional_buffer_usage_flags = 0);
 
 	/**
 	 * @brief Loads the first model from a GLTF file for use in simpler samples
 	 *        makes use of the Vertex struct in vulkan_example_base.h
 	 */
-	std::unique_ptr<sg::SubMesh> read_model_from_file(const std::string &file_name, uint32_t index, bool storage_buffer = false);
+	std::unique_ptr<sg::SubMesh> read_model_from_file(const std::string &file_name, uint32_t index, bool storage_buffer = false, VkBufferUsageFlags additional_buffer_usage_flags = 0);
 
   protected:
-	virtual std::unique_ptr<sg::Node> parse_node(const tinygltf::Node &gltf_node, size_t index) const;
+	virtual std::unique_ptr<vkb::scene_graph::NodeC> parse_node(const tinygltf::Node &gltf_node, size_t index) const;
 
 	virtual std::unique_ptr<sg::Camera> parse_camera(const tinygltf::Camera &gltf_camera) const;
 
@@ -92,13 +104,13 @@ class GLTFLoader
 
 	virtual std::unique_ptr<sg::Image> parse_image(tinygltf::Image &gltf_image) const;
 
-	virtual std::unique_ptr<sg::Sampler> parse_sampler(const tinygltf::Sampler &gltf_sampler) const;
+	virtual std::unique_ptr<vkb::scene_graph::components::SamplerC> parse_sampler(const tinygltf::Sampler &gltf_sampler) const;
 
 	virtual std::unique_ptr<sg::Texture> parse_texture(const tinygltf::Texture &gltf_texture) const;
 
 	virtual std::unique_ptr<sg::PBRMaterial> create_default_material();
 
-	virtual std::unique_ptr<sg::Sampler> create_default_sampler(int filter);
+	virtual std::unique_ptr<vkb::scene_graph::components::SamplerC> create_default_sampler(int filter);
 
 	virtual std::unique_ptr<sg::Camera> create_default_camera();
 
@@ -122,7 +134,7 @@ class GLTFLoader
 	 */
 	tinygltf::Value *get_extension(tinygltf::ExtensionMap &tinygltf_extensions, const std::string &extension);
 
-	Device &device;
+	vkb::core::DeviceC &device;
 
 	tinygltf::Model model;
 
@@ -132,8 +144,8 @@ class GLTFLoader
 	static std::unordered_map<std::string, bool> supported_extensions;
 
   private:
-	sg::Scene load_scene(int scene_index = -1);
+	vkb::scene_graph::SceneC load_scene(int scene_index = -1, VkBufferUsageFlags additional_buffer_usage_flags = 0);
 
-	std::unique_ptr<sg::SubMesh> load_model(uint32_t index, bool storage_buffer = false);
+	std::unique_ptr<sg::SubMesh> load_model(uint32_t index, bool storage_buffer = false, VkBufferUsageFlags additional_buffer_usage_flags = 0);
 };
 }        // namespace vkb

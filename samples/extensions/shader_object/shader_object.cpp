@@ -1,6 +1,6 @@
 /*
- * Copyright 2023-2024 Nintendo
- * Copyright 2023-2024, Sascha Willems
+ * Copyright 2023-2026 Nintendo
+ * Copyright 2023-2026, Sascha Willems
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  */
 
 #include "shader_object.h"
-#include <glsl_compiler.h>
 #include <heightmap.h>
 #include <unordered_map>
 
@@ -26,21 +25,6 @@ ShaderObject::ShaderObject()
 {
 	title = "Shader Object";
 	rng   = std::default_random_engine(12345);        // Use a fixed seed, makes random deterministic.
-
-	// Show that shader object is usable with Vulkan 1.1 + Dynamic Rendering
-	set_api_version(VK_API_VERSION_1_1);
-
-	// Enable the Shader Object extension
-	add_device_extension(VK_EXT_SHADER_OBJECT_EXTENSION_NAME);
-
-	// Enable extensions for Dynamic Rendering
-	add_device_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-
-	// Enable the Depth Stencil Resolve extension
-	add_device_extension(VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME);
-
-	// Enable extensions for sample
-	add_device_extension(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
 }
 
 ShaderObject::~ShaderObject()
@@ -103,13 +87,6 @@ ShaderObject::~ShaderObject()
 
 		vkDestroyDescriptorPool(vkdevice, descriptor_pool, nullptr);
 	}
-}
-
-// Currently the sample calls through this function in order to get the list of any instance layers, not just validation layers.
-// This is not suitable for a real application implementation using the layer, the layer will need to be shipped with the application.
-const std::vector<const char *> ShaderObject::get_validation_layers()
-{
-	return {"VK_LAYER_KHRONOS_shader_object"};
 }
 
 bool ShaderObject::resize(const uint32_t _width, const uint32_t _height)
@@ -310,11 +287,27 @@ void ShaderObject::create_default_sampler()
 	VK_CHECK(vkCreateSampler(get_device().get_handle(), &sampler_create_info, nullptr, &standard_sampler));
 }
 
-void ShaderObject::request_gpu_features(vkb::PhysicalDevice &gpu)
+void ShaderObject::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	// Enable the Shader Object extension
+	requested_extensions[VK_EXT_SHADER_OBJECT_EXTENSION_NAME] = vkb::RequestMode::Required;
+
+	// Enable extensions for Dynamic Rendering
+	requested_extensions[VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME] = vkb::RequestMode::Required;
+
+	// Enable the Depth Stencil Resolve extension
+	requested_extensions[VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME] = vkb::RequestMode::Required;
+
+	// Enable extensions for sample
+	requested_extensions[VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void ShaderObject::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable Shader Object
-	auto &requestedShaderObject        = gpu.request_extension_features<VkPhysicalDeviceShaderObjectFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT);
-	requestedShaderObject.shaderObject = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceShaderObjectFeaturesEXT, shaderObject);
 
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
@@ -330,8 +323,7 @@ void ShaderObject::request_gpu_features(vkb::PhysicalDevice &gpu)
 	}
 
 	// Enable Dynamic Rendering
-	auto &requested_dynamic_rendering            = gpu.request_extension_features<VkPhysicalDeviceDynamicRenderingFeaturesKHR>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR);
-	requested_dynamic_rendering.dynamicRendering = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDynamicRenderingFeaturesKHR, dynamicRendering);
 
 	// Enable Geometry Shaders
 	auto &requested_geometry_shader          = gpu.get_mutable_requested_features();
@@ -386,6 +378,12 @@ void ShaderObject::request_gpu_features(vkb::PhysicalDevice &gpu)
 			supported_output_formats.push_back(format);
 		}
 	}
+}
+
+void ShaderObject::request_layers(std::unordered_map<std::string, vkb::RequestMode> &requested_layers) const
+{
+	ApiVulkanSample::request_layers(requested_layers);
+	requested_layers["VK_LAYER_KHRONOS_shader_object"] = vkb::RequestMode::Required;
 }
 
 void ShaderObject::load_assets()
@@ -450,7 +448,7 @@ void ShaderObject::load_assets()
 
 void ShaderObject::prepare_uniform_buffers()
 {
-	camera_mats_ubo_buffer = std::make_unique<vkb::core::Buffer>(get_device(), sizeof(camera_mats_ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	camera_mats_ubo_buffer = std::make_unique<vkb::core::BufferC>(get_device(), sizeof(camera_mats_ubo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 void ShaderObject::update_uniform_buffers()
@@ -546,11 +544,9 @@ void ShaderObject::create_shaders()
 {
 	using json = nlohmann::json;
 
-	// Initialize a GLSL compiler and load shaders from the shader json file
-	vkb::GLSLCompiler glsl_compiler;
-	std::string       shaders     = vkb::fs::read_shader("shader_object/shaders.json");
-	json              shader_data = json::parse(shaders);
-	VkDevice          device      = get_device().get_handle();
+	std::string shaders     = vkb::fs::read_text_file("shader_object/shaders.json");
+	json        shader_data = json::parse(shaders);
+	VkDevice    device      = get_device().get_handle();
 
 	// Pre calc string lengths
 	const int unlinked_post_process_prefix_size = strlen("post_process_");
@@ -564,11 +560,11 @@ void ShaderObject::create_shaders()
 		LOGI("Compiling skybox Shader");
 		auto &shader = shader_data["skybox"];
 
-		std::string          vert_shader_name = shader["vert"].get<std::string>();
-		std::vector<uint8_t> vert_shader_data = vkb::fs::read_shader_binary("shader_object/" + vert_shader_name);
+		std::string           vert_shader_name = shader["vert"].get<std::string>();
+		std::vector<uint32_t> vert_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + vert_shader_name);
 
-		std::string          frag_shader_name = shader["frag"].get<std::string>();
-		std::vector<uint8_t> frag_shader_data = vkb::fs::read_shader_binary("shader_object/" + frag_shader_name);
+		std::string           frag_shader_name = shader["frag"].get<std::string>();
+		std::vector<uint32_t> frag_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + frag_shader_name);
 
 		// Create shaders with current and next stage bits and set the shaders GLSL shader data, descriptor sets, and push constants
 		skybox_vert_shader = new Shader(VK_SHADER_STAGE_VERTEX_BIT,
@@ -597,8 +593,8 @@ void ShaderObject::create_shaders()
 		LOGI("Compiling FSQ Shader");
 		auto &shader = shader_data["post_process"];
 
-		std::string          vert_shader_name = shader["vert"].get<std::string>();
-		std::vector<uint8_t> vert_shader_data = vkb::fs::read_shader_binary("shader_object/" + vert_shader_name);
+		std::string           vert_shader_name = shader["vert"].get<std::string>();
+		std::vector<uint32_t> vert_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + vert_shader_name);
 
 		// Create shader with current and next stage bits and set the GLSL shader data, descriptor sets, and push constants
 		post_process_vert_shader = new Shader(VK_SHADER_STAGE_VERTEX_BIT,
@@ -620,11 +616,11 @@ void ShaderObject::create_shaders()
 		LOGI("Compiling Terrain Shader");
 		auto &shader = shader_data["terrain"];
 
-		std::string          vert_shader_name = shader["vert"].get<std::string>();
-		std::vector<uint8_t> vert_shader_data = vkb::fs::read_shader_binary("shader_object/" + vert_shader_name);
+		std::string           vert_shader_name = shader["vert"].get<std::string>();
+		std::vector<uint32_t> vert_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + vert_shader_name);
 
-		std::string          frag_shader_name = shader["frag"].get<std::string>();
-		std::vector<uint8_t> frag_shader_data = vkb::fs::read_shader_binary("shader_object/" + frag_shader_name);
+		std::string           frag_shader_name = shader["frag"].get<std::string>();
+		std::vector<uint32_t> frag_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + frag_shader_name);
 
 		// Create shaders with current and next stage bits and set the shaders GLSL shader data, descriptor sets, and push constants
 		terrain_vert_shader = new Shader(VK_SHADER_STAGE_VERTEX_BIT,
@@ -653,11 +649,11 @@ void ShaderObject::create_shaders()
 	{
 		std::string shader_name = shader.key();
 
-		std::string          vert_shader_name = shader.value()["vert"].get<std::string>();
-		std::vector<uint8_t> vert_shader_data = vkb::fs::read_shader_binary("shader_object/" + vert_shader_name);
+		std::string           vert_shader_name = shader.value()["vert"].get<std::string>();
+		std::vector<uint32_t> vert_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + vert_shader_name);
 
-		std::string          frag_shader_name = shader.value()["frag"].get<std::string>();
-		std::vector<uint8_t> frag_shader_data = vkb::fs::read_shader_binary("shader_object/" + frag_shader_name);
+		std::string           frag_shader_name = shader.value()["frag"].get<std::string>();
+		std::vector<uint32_t> frag_shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + frag_shader_name);
 
 		LOGI("Compiling Shader Set {}", shader_name.c_str());
 
@@ -688,8 +684,8 @@ void ShaderObject::create_shaders()
 	// Load unlinked post_process frag shaders
 	for (auto &shader : shader_data["post_process"]["frag"].items())
 	{
-		std::string          shader_name = shader.value().get<std::string>();
-		std::vector<uint8_t> shader_data = vkb::fs::read_shader_binary("shader_object/" + shader_name);
+		std::string           shader_name = shader.value().get<std::string>();
+		std::vector<uint32_t> shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + shader_name);
 
 		LOGI("Compiling Shader {}", shader_name.c_str());
 
@@ -712,8 +708,8 @@ void ShaderObject::create_shaders()
 	// Load unlinked material vert shaders
 	for (auto &shader : shader_data["material"]["vert"].items())
 	{
-		std::string          shader_name = shader.value().get<std::string>();
-		std::vector<uint8_t> shader_data = vkb::fs::read_shader_binary("shader_object/" + shader_name);
+		std::string           shader_name = shader.value().get<std::string>();
+		std::vector<uint32_t> shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + shader_name);
 
 		LOGI("Compiling Shader {}", shader_name.c_str());
 
@@ -736,8 +732,8 @@ void ShaderObject::create_shaders()
 	// Load unlinked material geo shaders
 	for (auto &shader : shader_data["material"]["geo"].items())
 	{
-		std::string          shader_name = shader.value().get<std::string>();
-		std::vector<uint8_t> shader_data = vkb::fs::read_shader_binary("shader_object/" + shader_name);
+		std::string           shader_name = shader.value().get<std::string>();
+		std::vector<uint32_t> shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + shader_name);
 
 		LOGI("Compiling Shader {}", shader_name.c_str());
 
@@ -760,8 +756,8 @@ void ShaderObject::create_shaders()
 	// Load unlinked material frag shaders
 	for (auto &shader : shader_data["material"]["frag"].items())
 	{
-		std::string          shader_name = shader.value().get<std::string>();
-		std::vector<uint8_t> shader_data = vkb::fs::read_shader_binary("shader_object/" + shader_name);
+		std::string           shader_name = shader.value().get<std::string>();
+		std::vector<uint32_t> shader_data = vkb::fs::read_shader_binary_u32("shader_object/" + shader_name);
 
 		LOGI("Compiling Shader {}", shader_name.c_str());
 
@@ -912,18 +908,18 @@ void ShaderObject::generate_terrain()
 	uint32_t index_buffer_size  = index_count * sizeof(uint32_t);
 
 	// Create staging buffers
-	vkb::core::Buffer vertex_staging = vkb::core::Buffer::create_staging_buffer(get_device(), vertices);
-	vkb::core::Buffer index_staging  = vkb::core::Buffer::create_staging_buffer(get_device(), indices);
+	vkb::core::BufferC vertex_staging = vkb::core::BufferC::create_staging_buffer(get_device(), vertices);
+	vkb::core::BufferC index_staging  = vkb::core::BufferC::create_staging_buffer(get_device(), indices);
 
-	terrain.vertices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                       vertex_buffer_size,
-	                                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	terrain.vertices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                        vertex_buffer_size,
+	                                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	                                                        VMA_MEMORY_USAGE_GPU_ONLY);
+
+	terrain.indices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                       index_buffer_size,
+	                                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 	                                                       VMA_MEMORY_USAGE_GPU_ONLY);
-
-	terrain.indices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                      index_buffer_size,
-	                                                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-	                                                      VMA_MEMORY_USAGE_GPU_ONLY);
 
 	// Copy from staging buffers
 	VkCommandBuffer copy_command = get_device().create_command_buffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -978,7 +974,7 @@ void ShaderObject::build_command_buffers()
 		// Barriers for images that are rendered to
 		vkb::image_layout_transition(draw_cmd_buffer,
 		                             output_images[current_output_format].image,
-		                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		                             0,
 		                             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -1772,39 +1768,39 @@ void ShaderObject::on_update_ui_overlay(vkb::Drawer &drawer)
 
 		imgui_slider(&iterate_basic, "Basic Linked Shader Set:",
 		             basic_vert_shaders[current_basic_linked_shaders[selected_basic_object]]->get_name(),
-		             &current_basic_linked_shaders[selected_basic_object], basic_vert_shaders.size() - 1,
+		             &current_basic_linked_shaders[selected_basic_object], static_cast<uint32_t>(basic_vert_shaders.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		ImGui::SliderInt("Selected Material Object:", &selected_material_object, 0, num_material_objects - 1);
 
 		imgui_slider(&iterate_material_vert, "Material Vert Shader:",
 		             material_vert_shaders[current_material_shaders[selected_material_object].vert]->get_name(),
-		             &current_material_shaders[selected_material_object].vert, material_vert_shaders.size() - 1,
+		             &current_material_shaders[selected_material_object].vert, static_cast<uint32_t>(material_vert_shaders.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		imgui_slider(&iterate_material_geo, "Material Geo Shader:",
 		             material_geo_shaders[current_material_shaders[selected_material_object].geo]->get_name(),
-		             &current_material_shaders[selected_material_object].geo, material_geo_shaders.size() - 1,
+		             &current_material_shaders[selected_material_object].geo, static_cast<uint32_t>(material_geo_shaders.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		imgui_slider(&iterate_material_frag, "Material Frag Shader:",
 		             material_frag_shaders[current_material_shaders[selected_material_object].frag]->get_name(),
-		             &current_material_shaders[selected_material_object].frag, material_frag_shaders.size() - 1,
+		             &current_material_shaders[selected_material_object].frag, static_cast<uint32_t>(material_frag_shaders.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		imgui_slider(&iterate_post_process, "Post Process Frag Shader:",
 		             post_process_frag_shaders[current_post_process_shader]->get_name(),
-		             &current_post_process_shader, post_process_frag_shaders.size() - 1,
+		             &current_post_process_shader, static_cast<uint32_t>(post_process_frag_shaders.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		imgui_slider(&iterate_output, "Output Format:",
 		             supported_output_formats[current_output_format].name.c_str(),
-		             &current_output_format, supported_output_formats.size() - 1,
+		             &current_output_format, static_cast<uint32_t>(supported_output_formats.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		imgui_slider(&iterate_depth, "Depth Format:",
 		             supported_depth_formats[current_depth_format].name,
-		             &current_depth_format, supported_depth_formats.size() - 1,
+		             &current_depth_format, static_cast<uint32_t>(supported_depth_formats.size() - 1),
 		             slider_spacing, checkbox_spacing);
 
 		if (drawer.button("Randomize All"))
@@ -1830,7 +1826,7 @@ void ShaderObject::on_update_ui_overlay(vkb::Drawer &drawer)
 		ImGui::Text("16.667 ms");
 		ImGui::SameLine(-font_size);
 		ImGui::PushStyleColor(ImGuiCol_FrameBg, 0);
-		ImGui::PlotLines("##Frame Times", timestamp_values.data(), timestamp_values.size(), current_timestamp + 1, 0, 0.0f,
+		ImGui::PlotLines("##Frame Times", timestamp_values.data(), static_cast<uint32_t>(timestamp_values.size()), current_timestamp + 1, 0, 0.0f,
 		                 16.667f, ImVec2(1.08f * width * dpi_factor, graph_height));
 
 		ImGui::PopStyleColor();
@@ -1901,7 +1897,7 @@ ShaderObject::Image ShaderObject::create_output_image(VkFormat format, VkImageUs
 	// Get and set memory allocation size then allocate and bind memory
 	vkGetImageMemoryRequirements(get_device().get_handle(), image.image, &memory_requirements);
 	memory_allocation_info.allocationSize  = memory_requirements.size;
-	memory_allocation_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocation_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocation_info, nullptr, &image.memory));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), image.image, image.memory, 0));
 
@@ -1980,7 +1976,7 @@ void ShaderObject::bind_shader(VkCommandBuffer cmd_buffer, ShaderObject::Shader 
 ShaderObject::Shader::Shader(VkShaderStageFlagBits        stage_,
                              VkShaderStageFlags           next_stage_,
                              std::string                  shader_name_,
-                             const std::vector<uint8_t>  &vert_glsl_source,
+                             const std::vector<uint32_t> &vert_shader_source,
                              const VkDescriptorSetLayout *pSetLayouts,
                              const VkPushConstantRange   *pPushConstantRange)
 {
@@ -1988,14 +1984,7 @@ ShaderObject::Shader::Shader(VkShaderStageFlagBits        stage_,
 	shader_name = shader_name_;
 	next_stage  = next_stage_;
 
-	vkb::GLSLCompiler glsl_compiler;
-	std::string       info_log;
-
-	// Compile the GLSL source
-	if (!glsl_compiler.compile_to_spirv(stage, vert_glsl_source, "main", {}, spirv, info_log))
-	{
-		LOGE("Failed to compile shader, Error: {}", info_log.c_str());
-	}
+	spirv = vert_shader_source;
 
 	// Fill out the shader create info struct
 	vk_shader_create_info.sType                  = VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT;
@@ -2024,7 +2013,7 @@ void ShaderObject::Shader::destroy(VkDevice device)
 	}
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_shader_object()
+std::unique_ptr<vkb::VulkanSampleC> create_shader_object()
 {
 	return std::make_unique<ShaderObject>();
 }

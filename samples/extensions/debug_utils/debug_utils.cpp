@@ -1,4 +1,4 @@
-/* Copyright (c) 2020-2024, Sascha Willems
+/* Copyright (c) 2020-2026, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -71,10 +71,10 @@ DebugUtils::~DebugUtils()
  */
 void DebugUtils::debug_check_extension()
 {
-	std::vector<const char *> enabled_instance_extensions = get_instance().get_extensions();
+	std::vector<std::string> enabled_instance_extensions = get_instance().get_enabled_extensions();
 	for (auto &enabled_extension : enabled_instance_extensions)
 	{
-		if (strcmp(enabled_extension, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+		if (enabled_extension == VK_EXT_DEBUG_UTILS_EXTENSION_NAME)
 		{
 			debug_utils_supported = true;
 			break;
@@ -192,31 +192,15 @@ void DebugUtils::set_object_name(VkObjectType object_type, uint64_t object_handl
 
 /*
  * This sample uses a modified version of the shader loading function that adds a tag to the shader
- * The tag includes the source GLSL that can then be displayed by a debugging application
  */
 VkPipelineShaderStageCreateInfo DebugUtils::debug_load_shader(const std::string &file, VkShaderStageFlagBits stage)
 {
-	// Note: this can be reworked once offline compilation for GLSL shaders is added
-
-	// Default to GLSL
-	std::string               shader_folder{"glsl"};
-	std::string               shader_extension{""};
-	vkb::ShaderSourceLanguage src_language = vkb::ShaderSourceLanguage::GLSL;
-
-	if (get_shading_language() == vkb::ShadingLanguage::HLSL)
-	{
-		shader_folder = "hlsl";
-		// HLSL shaders are offline compiled to SPIR-V, so source is SPV
-		src_language     = vkb::ShaderSourceLanguage::SPV;
-		shader_extension = ".spv";
-	}
-
-	std::string shader_file_name = "debug_utils/" + shader_folder + "/" + file;
+	std::string shader_file_name = "debug_utils/" + get_shader_folder() + "/" + file;
 
 	VkPipelineShaderStageCreateInfo shader_stage = {};
 	shader_stage.sType                           = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	shader_stage.stage                           = stage;
-	shader_stage.module                          = vkb::load_shader((shader_file_name + shader_extension).c_str(), get_device().get_handle(), stage, src_language);
+	shader_stage.module                          = vkb::load_shader(shader_file_name, get_device().get_handle(), stage);
 	shader_stage.pName                           = "main";
 	assert(shader_stage.module != VK_NULL_HANDLE);
 	shader_modules.push_back(shader_stage.module);
@@ -232,14 +216,14 @@ VkPipelineShaderStageCreateInfo DebugUtils::debug_load_shader(const std::string 
 			shader_file_name = shader_file_name + ".hlsl";
 		}
 
-		std::vector<uint8_t> buffer = vkb::fs::read_shader_binary(shader_file_name);
+		auto buffer = vkb::fs::read_shader_binary_u32(shader_file_name);
 
 		// Pass the source GLSL shader code via an object tag
 		VkDebugUtilsObjectTagInfoEXT info = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_TAG_INFO_EXT};
 		info.objectType                   = VK_OBJECT_TYPE_SHADER_MODULE;
 		info.objectHandle                 = (uint64_t) shader_stage.module;
 		info.tagName                      = 1;
-		info.tagSize                      = buffer.size() * sizeof(uint8_t);
+		info.tagSize                      = buffer.size() * sizeof(uint32_t);
 		info.pTag                         = buffer.data();
 		vkSetDebugUtilsObjectTagEXT(get_device().get_handle(), &info);
 	}
@@ -299,7 +283,7 @@ void DebugUtils::debug_name_objects()
 	set_object_name(VK_OBJECT_TYPE_RENDER_PASS, (uint64_t) filter_pass.render_pass, "Bloom filter pass render pass");
 }
 
-void DebugUtils::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DebugUtils::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
@@ -486,7 +470,11 @@ void DebugUtils::build_command_buffers()
 			vkCmdEndRenderPass(draw_cmd_buffers[i]);
 
 			cmd_end_label(draw_cmd_buffers[i]);
-			cmd_end_label(draw_cmd_buffers[i]);
+
+			if (bloom)
+			{
+				cmd_end_label(draw_cmd_buffers[i]);
+			}
 		}
 
 		VK_CHECK(vkEndCommandBuffer(draw_cmd_buffers[i]));
@@ -536,7 +524,7 @@ void DebugUtils::create_attachment(VkFormat format, VkImageUsageFlagBits usage, 
 	VK_CHECK(vkCreateImage(get_device().get_handle(), &image, nullptr, &attachment->image));
 	vkGetImageMemoryRequirements(get_device().get_handle(), attachment->image, &memory_requirements);
 	memory_allocate_info.allocationSize  = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &attachment->mem));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), attachment->image, attachment->mem, 0));
 
@@ -611,19 +599,27 @@ void DebugUtils::prepare_offscreen_buffer()
 		// Use subpass dependencies for attachment layout transitions
 		std::array<VkSubpassDependency, 2> dependencies{};
 
+		// vkCmdBeginRenderPass clears the color aspect of attachment 0 (offscreen.color[0]) and 1 (offscreen.color[1]) in subpass 0 of VkRenderPass offscreen.render_pass
+		// (loadOp VK_ATTACHMENT_LOAD_OP_CLEAR), which was previously written during an image layout transition initiated by the same command.
+		// For correct synchronization, the dependency from external to subpass 0 must allow VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT access at VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT.
 		dependencies[0].srcSubpass    = VK_SUBPASS_EXTERNAL;
 		dependencies[0].dstSubpass    = 0;
 		dependencies[0].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[0].dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-		dependencies[1].srcSubpass    = 0;
-		dependencies[1].dstSubpass    = VK_SUBPASS_EXTERNAL;
+		// vkCmdBeginRenderPass clears the depth aspect of attachment 2 (offscreen.depth) in subpass 0 of VkRenderPass offscreen.render_pass (loadOp VK_ATTACHMENT_LOAD_OP_CLEAR),
+		// which was previously written during an image layout transition initiated by the same command.
+		// For correct synchronization, the dependency from external to subpass 0 must also allow VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT access at VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT.
+		dependencies[1].srcSubpass    = VK_SUBPASS_EXTERNAL;
+		dependencies[1].dstSubpass    = 0;
 		dependencies[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].dstStageMask  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dependencies[1].dstStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		// No need for a dependency from subpass 0 to external
 
 		VkRenderPassCreateInfo render_pass_create_info = {};
 		render_pass_create_info.sType                  = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -631,7 +627,7 @@ void DebugUtils::prepare_offscreen_buffer()
 		render_pass_create_info.attachmentCount        = static_cast<uint32_t>(attachment_descriptions.size());
 		render_pass_create_info.subpassCount           = 1;
 		render_pass_create_info.pSubpasses             = &subpass;
-		render_pass_create_info.dependencyCount        = 2;
+		render_pass_create_info.dependencyCount        = static_cast<uint32_t>(dependencies.size());
 		render_pass_create_info.pDependencies          = dependencies.data();
 
 		VK_CHECK(vkCreateRenderPass(get_device().get_handle(), &render_pass_create_info, nullptr, &offscreen.render_pass));
@@ -967,8 +963,8 @@ void DebugUtils::prepare_pipelines()
 	pipeline_create_info.pVertexInputState                 = &empty_input_state;
 
 	// Final fullscreen composition pass pipeline
-	shader_stages[0]                  = debug_load_shader("composition.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                  = debug_load_shader("composition.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                  = debug_load_shader("composition.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                  = debug_load_shader("composition.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	pipeline_create_info.layout       = pipeline_layouts.composition;
 	pipeline_create_info.renderPass   = render_pass;
 	rasterization_state.cullMode      = VK_CULL_MODE_FRONT_BIT;
@@ -977,8 +973,8 @@ void DebugUtils::prepare_pipelines()
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.composition));
 
 	// Bloom pass
-	shader_stages[0]                           = debug_load_shader("bloom.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                           = debug_load_shader("bloom.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                           = debug_load_shader("bloom.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                           = debug_load_shader("bloom.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	color_blend_state.pAttachments             = &blend_attachment_state;
 	blend_attachment_state.colorWriteMask      = 0xF;
 	blend_attachment_state.blendEnable         = VK_TRUE;
@@ -1036,8 +1032,8 @@ void DebugUtils::prepare_pipelines()
 	color_blend_state.attachmentCount  = 2;
 	color_blend_state.pAttachments     = blend_attachment_states.data();
 
-	shader_stages[0] = debug_load_shader("gbuffer.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = debug_load_shader("gbuffer.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = debug_load_shader("gbuffer.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = debug_load_shader("gbuffer.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.skysphere));
 
 	// Enable depth test and write
@@ -1052,10 +1048,10 @@ void DebugUtils::prepare_pipelines()
 void DebugUtils::prepare_uniform_buffers()
 {
 	// Matrices vertex shader uniform buffer
-	uniform_buffers.matrices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                               sizeof(ubo_vs),
-	                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.matrices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                sizeof(ubo_vs),
+	                                                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Sascha Willems
+/* Copyright (c) 2022-2025, Sascha Willems
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,9 +26,6 @@
 TimestampQueries::TimestampQueries()
 {
 	title = "Timestamp queries";
-	// This sample uses vkCmdResetQueryPool to reset the timestamp query pool on the host, which requires VK_EXT_host_query_reset or Vulkan 1.2
-	add_device_extension(VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME);
-	// This also requires us to enable the feature in the appropriate feature struct, see request_gpu_features()
 }
 
 TimestampQueries::~TimestampQueries()
@@ -70,12 +67,8 @@ TimestampQueries::~TimestampQueries()
 	}
 }
 
-void TimestampQueries::request_gpu_features(vkb::PhysicalDevice &gpu)
+void TimestampQueries::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
-	// We need to enable the command pool reset feature in the extension struct
-	auto &requested_extension_features          = gpu.request_extension_features<VkPhysicalDeviceHostQueryResetFeaturesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES_EXT);
-	requested_extension_features.hostQueryReset = VK_TRUE;
-
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
 	{
@@ -291,7 +284,7 @@ void TimestampQueries::create_attachment(VkFormat format, VkImageUsageFlagBits u
 	VK_CHECK(vkCreateImage(get_device().get_handle(), &image, nullptr, &attachment->image));
 	vkGetImageMemoryRequirements(get_device().get_handle(), attachment->image, &memory_requirements);
 	memory_allocate_info.allocationSize  = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &attachment->mem));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), attachment->image, attachment->mem, 0));
 
@@ -779,8 +772,8 @@ void TimestampQueries::prepare_pipelines()
 	pipeline_create_info.pVertexInputState                 = &empty_input_state;
 
 	// Final fullscreen composition pass pipeline
-	shader_stages[0]                  = load_shader("hdr", "composition.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                  = load_shader("hdr", "composition.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                  = load_shader("hdr", "composition.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                  = load_shader("hdr", "composition.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	pipeline_create_info.layout       = pipeline_layouts.composition;
 	pipeline_create_info.renderPass   = render_pass;
 	rasterization_state.cullMode      = VK_CULL_MODE_FRONT_BIT;
@@ -789,8 +782,8 @@ void TimestampQueries::prepare_pipelines()
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.composition));
 
 	// Bloom pass
-	shader_stages[0]                           = load_shader("hdr", "bloom.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                           = load_shader("hdr", "bloom.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                           = load_shader("hdr", "bloom.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                           = load_shader("hdr", "bloom.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	color_blend_state.pAttachments             = &blend_attachment_state;
 	blend_attachment_state.colorWriteMask      = 0xF;
 	blend_attachment_state.blendEnable         = VK_TRUE;
@@ -844,8 +837,8 @@ void TimestampQueries::prepare_pipelines()
 	color_blend_state.attachmentCount  = 2;
 	color_blend_state.pAttachments     = blend_attachment_states.data();
 
-	shader_stages[0] = load_shader("hdr", "gbuffer.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("hdr", "gbuffer.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("hdr", "gbuffer.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("hdr", "gbuffer.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// Set constant parameters via specialization constants
 	specialization_map_entries[0]        = vkb::initializers::specialization_map_entry(0, 0, sizeof(uint32_t));
@@ -871,16 +864,16 @@ void TimestampQueries::prepare_pipelines()
 void TimestampQueries::prepare_uniform_buffers()
 {
 	// Matrices vertex shader uniform buffer
-	uniform_buffers.matrices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                               sizeof(ubo_vs),
-	                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.matrices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                sizeof(ubo_vs),
+	                                                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	// Params
-	uniform_buffers.params = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                             sizeof(ubo_params),
-	                                                             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                             VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.params = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                              sizeof(ubo_params),
+	                                                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 	update_params();
@@ -965,7 +958,7 @@ bool TimestampQueries::prepare(const vkb::ApplicationOptions &options)
 	if (!device_limits.timestampComputeAndGraphics)
 	{
 		// Check if the graphics queue used in this sample supports time stamps
-		VkQueueFamilyProperties graphics_queue_family_properties = get_device().get_suitable_graphics_queue().get_properties();
+		VkQueueFamilyProperties graphics_queue_family_properties = get_device().get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0).get_properties();
 		if (graphics_queue_family_properties.timestampValidBits == 0)
 		{
 			throw std::runtime_error{"The selected graphics queue family does not support timestamp queries!"};

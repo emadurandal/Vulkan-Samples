@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,8 +22,6 @@
 #include <unordered_map>
 
 #include <android/context.hpp>
-
-#include "common/error.h"
 
 #include <fmt/format.h>
 #include <imgui.h>
@@ -344,6 +342,10 @@ AndroidPlatform::AndroidPlatform(const PlatformContext &context) :
 
 ExitCode AndroidPlatform::initialize(const std::vector<Plugin *> &plugins)
 {
+	for (auto plugin : plugins)
+	{
+		plugin->clear_platform();
+	}
 	android_app_set_key_event_filter(app, key_event_filter);
 	android_app_set_motion_event_filter(app, motion_event_filter);
 
@@ -461,6 +463,7 @@ void AndroidPlatform::terminate(ExitCode code)
 		// Process events until app->destroyRequested is set
 	}
 
+	plugins.clear();
 	Platform::terminate(code);
 }
 

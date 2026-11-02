@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2025, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -68,17 +68,17 @@ inline VkImageType find_image_type(VkExtent3D extent)
 namespace core
 {
 
-Image ImageBuilder::build(Device &device) const
+Image ImageBuilder::build(vkb::core::DeviceC &device) const
 {
 	return Image(device, *this);
 }
 
-ImagePtr ImageBuilder::build_unique(Device &device) const
+ImagePtr ImageBuilder::build_unique(vkb::core::DeviceC &device) const
 {
 	return std::make_unique<Image>(device, *this);
 }
 
-Image::Image(vkb::Device          &device,
+Image::Image(vkb::core::DeviceC   &device,
              const VkExtent3D     &extent,
              VkFormat              format,
              VkImageUsageFlags     image_usage,
@@ -107,20 +107,21 @@ Image::Image(vkb::Device          &device,
 {
 }
 
-Image::Image(vkb::Device &device, ImageBuilder const &builder) :
-    Allocated{builder.alloc_create_info, VK_NULL_HANDLE, &device}, create_info(builder.create_info)
+Image::Image(vkb::core::DeviceC &device, ImageBuilder const &builder) :
+    vkb::allocated::AllocatedC<VkImage>{builder.get_allocation_create_info(), VK_NULL_HANDLE, &device}, create_info(builder.get_create_info())
 {
 	set_handle(create_image(create_info));
 	subresource.arrayLayer = create_info.arrayLayers;
 	subresource.mipLevel   = create_info.mipLevels;
-	if (!builder.debug_name.empty())
+	if (!builder.get_debug_name().empty())
 	{
-		set_debug_name(builder.debug_name);
+		set_debug_name(builder.get_debug_name());
 	}
 }
 
-Image::Image(Device &device, VkImage handle, const VkExtent3D &extent, VkFormat format, VkImageUsageFlags image_usage, VkSampleCountFlagBits sample_count) :
-    Allocated{handle, &device}
+Image::Image(
+    vkb::core::DeviceC &device, VkImage handle, const VkExtent3D &extent, VkFormat format, VkImageUsageFlags image_usage, VkSampleCountFlagBits sample_count) :
+    vkb::allocated::AllocatedC<VkImage>{handle, &device}
 {
 	create_info.extent     = extent;
 	create_info.imageType  = find_image_type(extent);
@@ -131,11 +132,9 @@ Image::Image(Device &device, VkImage handle, const VkExtent3D &extent, VkFormat 
 	subresource.mipLevel = create_info.mipLevels = 1;
 }
 
-Image::Image(Image &&other) noexcept :
-    Allocated{std::move(other)},
-    create_info{std::exchange(other.create_info, {})},
-    subresource{std::exchange(other.subresource, {})},
-    views(std::exchange(other.views, {}))
+Image::Image(Image &&other) noexcept
+    :
+    vkb::allocated::AllocatedC<VkImage>{std::move(other)}, create_info{std::exchange(other.create_info, {})}, subresource{std::exchange(other.subresource, {})}, views(std::exchange(other.views, {}))
 {
 	// Update image views references to this image to avoid dangling pointers
 	for (auto &view : views)

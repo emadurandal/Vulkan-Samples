@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2020, Arm Limited and Contributors
+/* Copyright (c) 2019-2025, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -19,11 +19,19 @@
 
 #include "common/vk_common.h"
 #include "core/buffer.h"
-#include "core/image_view.h"
-#include "core/sampler.h"
 
 namespace vkb
 {
+namespace core
+{
+template <vkb::BindingType bindingType>
+class Buffer;
+using BufferC = Buffer<vkb::BindingType::C>;
+
+class ImageView;
+class Sampler;
+}        // namespace core
+
 /**
  * @brief A resource info is a struct containing the actual resource data.
  *
@@ -33,7 +41,7 @@ struct ResourceInfo
 {
 	bool dirty{false};
 
-	const core::Buffer *buffer{nullptr};
+	const vkb::core::BufferC *buffer{nullptr};
 
 	VkDeviceSize offset{0};
 
@@ -45,7 +53,7 @@ struct ResourceInfo
 };
 
 /**
- * @brief A resource set is a set of bindings containing resources that were bound 
+ * @brief A resource set is a set of bindings containing resources that were bound
  *        by a command buffer.
  *
  * The ResourceSet has a one to one mapping with a DescriptorSet.
@@ -61,7 +69,7 @@ class ResourceSet
 
 	void clear_dirty(uint32_t binding, uint32_t array_element);
 
-	void bind_buffer(const core::Buffer &buffer, VkDeviceSize offset, VkDeviceSize range, uint32_t binding, uint32_t array_element);
+	void bind_buffer(const vkb::core::BufferC &buffer, VkDeviceSize offset, VkDeviceSize range, uint32_t binding, uint32_t array_element);
 
 	void bind_image(const core::ImageView &image_view, const core::Sampler &sampler, uint32_t binding, uint32_t array_element);
 
@@ -94,7 +102,7 @@ class ResourceBindingState
 
 	void clear_dirty(uint32_t set);
 
-	void bind_buffer(const core::Buffer &buffer, VkDeviceSize offset, VkDeviceSize range, uint32_t set, uint32_t binding, uint32_t array_element);
+	void bind_buffer(const vkb::core::BufferC &buffer, VkDeviceSize offset, VkDeviceSize range, uint32_t set, uint32_t binding, uint32_t array_element);
 
 	void bind_image(const core::ImageView &image_view, const core::Sampler &sampler, uint32_t set, uint32_t binding, uint32_t array_element);
 

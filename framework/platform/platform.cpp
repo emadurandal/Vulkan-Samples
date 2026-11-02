@@ -1,4 +1,5 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -19,6 +20,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <iostream>
 #include <mutex>
 #include <vector>
 
@@ -29,9 +31,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "core/util/logging.hpp"
-#include "filesystem/legacy.h"
 #include "force_close/force_close.h"
-#include "platform/parsers/CLI11.h"
 #include "platform/plugins/plugin.h"
 #include "vulkan_sample.h"
 
@@ -40,20 +40,15 @@ namespace vkb
 const uint32_t Platform::MIN_WINDOW_WIDTH  = 420;
 const uint32_t Platform::MIN_WINDOW_HEIGHT = 320;
 
-std::string Platform::external_storage_directory = "";
-
-std::string Platform::temp_directory = "";
-
 Platform::Platform(const PlatformContext &context)
 {
 	arguments = context.arguments();
-
-	external_storage_directory = context.external_storage_directory();
-	temp_directory             = context.temp_directory();
 }
 
-ExitCode Platform::initialize(const std::vector<Plugin *> &plugins)
+ExitCode Platform::initialize(const std::vector<Plugin *> &plugins_)
 {
+	plugins = plugins_;
+
 	auto sinks = get_platform_sinks();
 
 	auto logger = std::make_shared<spdlog::logger>("logger", sinks.begin(), sinks.end());
@@ -69,40 +64,81 @@ ExitCode Platform::initialize(const std::vector<Plugin *> &plugins)
 
 	LOGI("Logger initialized");
 
-	parser = std::make_unique<CLI11CommandParser>("vulkan_samples", "\n\tVulkan Samples\n\n\t\tA collection of samples to demonstrate the Vulkan best practice.\n", arguments);
-
-	// Process command line arguments
-	if (!parser->parse(associate_plugins(plugins)))
+	// To get the error messages formatted as we like them to have, exit after initializing the logger, earliest
+	if (arguments.empty())
+	{
+		return ExitCode::NoSample;
+	}
+	else if (std::ranges::any_of(arguments, [](auto const &arg) { return arg == "-h" || arg == "--help"; }))
 	{
 		return ExitCode::Help;
 	}
 
-	// Subscribe plugins to requested hooks and store activated plugins
-	for (auto *plugin : plugins)
+	for (auto const &plugin : plugins)
 	{
-		if (plugin->activate_plugin(this, *parser.get()))
+		plugin->set_platform(this);
+		for (auto const &command : plugin->get_commands())
 		{
-			auto &plugin_hooks = plugin->get_hooks();
-			for (auto hook : plugin_hooks)
+			auto [it, inserted] = command_map.insert(std::make_pair(command.first, plugin));
+			if (!inserted)
 			{
-				auto it = hooks.find(hook);
-
-				if (it == hooks.end())
-				{
-					auto r = hooks.emplace(hook, std::vector<Plugin *>{});
-
-					if (r.second)
-					{
-						it = r.first;
-					}
-				}
-
-				it->second.emplace_back(plugin);
+				LOGE("Command \"{}\" from plugin \"{}\" is already listed for plugin \"{}\"!", command.first, plugin->get_name(), it->second->get_name());
 			}
-
-			active_plugins.emplace_back(plugin);
+		}
+		for (auto const &option : plugin->get_options())
+		{
+			auto [it, inserted] = option_map.insert(std::make_pair(option.first, plugin));
+			if (!inserted)
+			{
+				LOGE("Option \"{}\" from plugin \"{}\" is already listed for plugin \"{}\"!", option.first, plugin->get_name(), it->second->get_name());
+			}
 		}
 	}
+
+	std::deque<std::string> argumentDeque(arguments.begin(), arguments.end());
+
+	// the arguments have to start with a command
+	auto commandIt = command_map.find(argumentDeque[0]);
+	if (commandIt == command_map.end())
+	{
+		LOGE("Command \"{}\" is unknown!", argumentDeque[0]);
+		return ExitCode::Help;
+	}
+	else if (commandIt->second->handle_command(argumentDeque))
+	{
+		register_hooks(commandIt->second);
+	}
+	else
+	{
+		LOGE("Command \"{}\" advertised by plugin \"{}\" was not handled!", argumentDeque[0], commandIt->second->get_name());
+		return ExitCode::Help;
+	}
+	// and then there are options only
+	while (!argumentDeque.empty())
+	{
+		if (argumentDeque[0].substr(0, 2) != "--")
+		{
+			LOGE("Option \"{}\" does not start with \"--\"!", argumentDeque[0]);
+			return ExitCode::Help;
+		}
+		auto optionIt = option_map.find(argumentDeque[0].substr(2));
+		if (optionIt == option_map.end())
+		{
+			LOGE("Option \"{}\" is unknown!", argumentDeque[0]);
+			return ExitCode::Help;
+		}
+		else if (optionIt->second->handle_option(argumentDeque))
+		{
+			register_hooks(optionIt->second);
+		}
+		else
+		{
+			LOGE("Option \"{}\" advertised by plugin \"{}\" was not handled!", argumentDeque[0], optionIt->second->get_name());
+			return ExitCode::Help;
+		}
+	}
+	// Now that all options are handled, trigger the command
+	commandIt->second->trigger_command();
 
 	// Platform has been closed by a plugins initialization phase
 	if (close_requested)
@@ -126,120 +162,100 @@ ExitCode Platform::initialize(const std::vector<Plugin *> &plugins)
 	return ExitCode::Success;
 }
 
-ExitCode Platform::main_loop_frame()
+void Platform::register_hooks(Plugin *plugin)
 {
-	if (!app_requested())
+	auto &plugin_hooks = plugin->get_hooks();
+	for (auto hook : plugin_hooks)
 	{
-		return ExitCode::NoSample;
+		auto it = hooks.find(hook);
+
+		if (it == hooks.end())
+		{
+			auto r = hooks.emplace(hook, std::vector<Plugin *>{});
+			assert(r.second);
+			it = r.first;
+		}
+
+		if (std::ranges::none_of(it->second, [plugin](auto p) { return p == plugin; }))
+		{
+			it->second.emplace_back(plugin);
+		}
 	}
 
-	if (!window->should_close() && !close_requested)
+	if (std::ranges::none_of(active_plugins, [plugin](auto p) { return p == plugin; }))
 	{
-		try
+		active_plugins.emplace_back(plugin);
+	}
+}
+
+ExitCode Platform::main_loop_frame()
+{
+	try
+	{
+		// Load the requested app
+		if (app_requested())
 		{
-			// Load the requested app
-			if (app_requested())
+			if (!start_app())
 			{
-				if (!start_app())
-				{
-					LOGE("Failed to load requested application");
-					return ExitCode::FatalError;
-				}
-
-				// Compensate for load times of the app by rendering the first frame pre-emptively
-				timer.tick<Timer::Seconds>();
-				active_app->update(0.01667f);
+				throw std::runtime_error("Failed to load requested application");
 			}
 
-			update();
-
-			if (active_app && active_app->should_close())
-			{
-				std::string id = active_app->get_name();
-				on_app_close(id);
-				active_app->finish();
-			}
-
-			window->process_events();
+			// Compensate for load times of the app by rendering the first frame pre-emptively
+			timer.tick<Timer::Seconds>();
+			active_app->update(0.01667f);
 		}
-		catch (std::exception &e)
+
+		if (!active_app)
 		{
-			LOGE("Error Message: {}", e.what());
-			LOGE("Failed when running application {}", active_app->get_name());
+			return ExitCode::NoSample;
+		}
 
-			on_app_error(active_app->get_name());
+		update();
 
-            if (app_requested())
-            {
-                LOGI("Attempting to load next application");
-            }
-            else
-            {
-				set_last_error(e.what());
-                return ExitCode::FatalError;
-            }
-        }
-    }
+		if (active_app->should_close())
+		{
+			std::string id = active_app->get_name();
+			on_app_close(id);
+			active_app->finish();
+		}
+
+		window->process_events();
+
+		if (window->should_close() || close_requested)
+		{
+			return ExitCode::Close;
+		}
+	}
+	catch (std::exception &e)
+	{
+		LOGE("Error Message: {}", e.what());
+		LOGE("Failed when running application {}", active_app->get_name());
+
+		on_app_error(active_app->get_name());
+
+		if (app_requested())
+		{
+			LOGI("Attempting to load next application");
+		}
+		else
+		{
+			set_last_error(e.what());
+			return ExitCode::FatalError;
+		}
+	}
 
 	return ExitCode::Success;
 }
 
 ExitCode Platform::main_loop()
 {
-	if (!app_requested())
+	ExitCode exit_code = ExitCode::Success;
+	while (exit_code == ExitCode::Success)
 	{
-		return ExitCode::NoSample;
+		exit_code = main_loop_frame();
 	}
 
-	while (!window->should_close() && !close_requested)
-	{
-		try
-		{
-			// Load the requested app
-			if (app_requested())
-			{
-				if (!start_app())
-				{
-					LOGE("Failed to load requested application");
-					return ExitCode::FatalError;
-				}
-
-				// Compensate for load times of the app by rendering the first frame pre-emptively
-				timer.tick<Timer::Seconds>();
-				active_app->update(0.01667f);
-			}
-
-			update();
-
-			if (active_app && active_app->should_close())
-			{
-				std::string id = active_app->get_name();
-				on_app_close(id);
-				active_app->finish();
-			}
-
-			window->process_events();
-		}
-		catch (std::exception &e)
-		{
-			LOGE("Error Message: {}", e.what());
-			LOGE("Failed when running application {}", active_app->get_name());
-
-			on_app_error(active_app->get_name());
-
-			if (app_requested())
-			{
-				LOGI("Attempting to load next application");
-			}
-			else
-			{
-                set_last_error(e.what());
-				return ExitCode::FatalError;
-			}
-		}
-	}
-
-	return ExitCode::Success;
+	return exit_code;
 }
 
 void Platform::update()
@@ -255,19 +271,19 @@ void Platform::update()
 			delta_time = simulation_frame_time;
 		}
 
-		active_app->update_overlay(delta_time, [=]() {
+		active_app->update_overlay(delta_time, [=, this]() {
 			on_update_ui_overlay(*active_app->get_drawer());
 		});
 		active_app->update(delta_time);
 
-		if (auto *app = dynamic_cast<VulkanSample<vkb::BindingType::Cpp> *>(active_app.get()))
+		if (auto *app = dynamic_cast<VulkanSampleCpp *>(active_app.get()))
 		{
 			if (app->has_render_context())
 			{
-				on_post_draw(reinterpret_cast<vkb::RenderContext &>(app->get_render_context()));
+				on_post_draw(reinterpret_cast<vkb::rendering::RenderContextC &>(app->get_render_context()));
 			}
 		}
-		else if (auto *app = dynamic_cast<VulkanSample<vkb::BindingType::C> *>(active_app.get()))
+		else if (auto *app = dynamic_cast<VulkanSampleC *>(active_app.get()))
 		{
 			if (app->has_render_context())
 			{
@@ -281,10 +297,33 @@ void Platform::terminate(ExitCode code)
 {
 	if (code == ExitCode::Help)
 	{
-		auto help = parser->help();
-		for (auto &line : help)
+		LOGI("");
+		LOGI("\tVulkan Samples");
+		LOGI("");
+		LOGI("\t\tA collection of samples to demonstrate the Vulkan best practice.");
+		LOGI("");
+		LOGI("\tUsage: vulkan_samples [OPTIONS]");
+		LOGI("");
+		LOGI("\t\tOptions:");
+		LOGI("\t\t\t-h,--help                   Print this help message and exit");
+
+		// determine the width for the commands/options
+		size_t width = 4;        // minimal width for "help"
+		for (auto plugin : plugins)
 		{
-			LOGI(line);
+			for (auto const &command : plugin->get_commands())
+			{
+				width = std::max(width, command.first.length());
+			}
+			for (auto const &option : plugin->get_options())
+			{
+				width = std::max(width, option.first.length());
+			}
+		}
+
+		for (auto plugin : plugins)
+		{
+			plugin->log_help(width + 2);
 		}
 	}
 
@@ -368,16 +407,6 @@ void Platform::set_window_properties(const Window::OptionalProperties &propertie
 	window_properties.extent.height = properties.extent.height.has_value() ? properties.extent.height.value() : window_properties.extent.height;
 }
 
-const std::string &Platform::get_external_storage_directory()
-{
-	return external_storage_directory;
-}
-
-const std::string &Platform::get_temp_directory()
-{
-	return temp_directory;
-}
-
 std::string &Platform::get_last_error()
 {
 	return last_error;
@@ -398,11 +427,6 @@ Application &Platform::get_app() const
 Window &Platform::get_window()
 {
 	return *window;
-}
-
-void Platform::set_external_storage_directory(const std::string &dir)
-{
-	external_storage_directory = dir;
 }
 
 void Platform::set_last_error(const std::string &error)
@@ -445,15 +469,15 @@ bool Platform::start_app()
 
 	active_app = requested_app_info->create();
 
-	active_app->set_name(requested_app_info->id);
-
 	if (!active_app)
 	{
 		LOGE("Failed to create a valid vulkan app.");
 		return false;
 	}
+	auto sample_info = static_cast<const apps::SampleInfo *>(requested_app_info);
+	active_app->set_name(sample_info->name);
 
-	if (!active_app->prepare({false, window.get()}))
+	if (!active_app->prepare({fixed_simulation_fps, window.get()}))
 	{
 		LOGE("Failed to prepare vulkan app.");
 		return false;
@@ -507,7 +531,7 @@ void Platform::resize(uint32_t width, uint32_t height)
 		}                               \
 	}
 
-void Platform::on_post_draw(RenderContext &context)
+void Platform::on_post_draw(vkb::rendering::RenderContextC &context)
 {
 	HOOK(Hook::PostDraw, on_post_draw(context));
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023-2024, Google
+/* Copyright (c) 2023-2026, Google
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -20,13 +20,12 @@
 #include "common/vk_common.h"
 #include "core/util/logging.hpp"
 #include "filesystem/legacy.h"
-#include "glsl_compiler.h"
 
 static constexpr uint32_t INVALID_IMAGE_INDEX = std::numeric_limits<uint32_t>::max();
 
 void SwapchainRecreation::get_queue()
 {
-	queue = &get_device().get_suitable_graphics_queue();
+	queue = &get_device().get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0);
 
 	// Make sure presentation is supported on this queue.  This is practically always the case;
 	// if a platform/driver is found where this is not true, all queues supporting
@@ -89,6 +88,14 @@ void SwapchainRecreation::query_compatible_present_modes(VkPresentModeKHR presen
 	compatible_modes.resize(modes.presentModeCount);
 	modes.pPresentModes = compatible_modes.data();
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilities2KHR(get_gpu_handle(), &surface_info, &surface_caps));
+
+	// The driver may report FIFO latest ready even when its device extension is not enabled.
+	// Remove it in that case, since passing it to swapchain creation would be invalid.
+	if (!get_device().is_extension_enabled(
+	        VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME))
+	{
+		std::erase(compatible_modes, VK_PRESENT_MODE_FIFO_LATEST_READY_EXT);
+	}
 }
 
 void SwapchainRecreation::adjust_desired_present_mode()
@@ -101,13 +108,13 @@ void SwapchainRecreation::adjust_desired_present_mode()
 
 	// When switching to MAILBOX, fallback to IMMEDIATE if not available and back to FIFO if
 	// neither are available.
-	if (desired_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && std::find(present_modes.begin(), present_modes.end(), desired_present_mode) != present_modes.end())
+	if (desired_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && std::ranges::find(present_modes, desired_present_mode) != present_modes.end())
 	{
 		return;
 	}
 
 	desired_present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-	if (std::find(present_modes.begin(), present_modes.end(), desired_present_mode) == present_modes.end())
+	if (std::ranges::find(present_modes, desired_present_mode) == present_modes.end())
 	{
 		LOGW("Neither MAILBOX nor IMMEDIATE are supported, falling back to FIFO");
 		desired_present_mode = VK_PRESENT_MODE_FIFO_KHR;
@@ -164,7 +171,7 @@ bool SwapchainRecreation::are_present_modes_compatible()
 	// While this functionality was introduced by VK_EXT_surface_maintenance1, compatible_modes
 	// is always set up such that every present mode is assumed to be compatible only with
 	// itself; there is no need for an extension check here.
-	return std::find(compatible_modes.begin(), compatible_modes.end(), desired_present_mode) != compatible_modes.end();
+	return std::ranges::find(compatible_modes, desired_present_mode) != compatible_modes.end();
 }
 
 /**
@@ -684,7 +691,7 @@ void SwapchainRecreation::cleanup_present_history()
 		// Move clean up data to the next (now first) present operation, if any.  Note that
 		// there cannot be any clean up data on the rest of the present operations, because
 		// the first present already gathers every old swapchain to clean up.
-		assert(std::all_of(present_history.begin(), present_history.end(), [](const PresentOperationInfo &op) {
+		assert(std::ranges::all_of(present_history, [](const PresentOperationInfo &op) {
 			return op.old_swapchains.empty();
 		}));
 		present_history.front().old_swapchains = std::move(present_info.old_swapchains);
@@ -894,14 +901,8 @@ SwapchainRecreation::SwapchainRecreation()
 {
 	const char *use_maintenance1 = std::getenv("USE_MAINTENANCE1");
 
-	if ((use_maintenance1 == nullptr) || (strcmp(use_maintenance1, "no") != 0))
-	{
-		// Request sample-specific extensions as optional
-		add_instance_extension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, true);
-		add_instance_extension(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME, true);
-		add_device_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME, true);
-	}
-	else
+	allow_maintenance1 = (use_maintenance1 == nullptr) || (strcmp(use_maintenance1, "no") != 0);
+	if (!allow_maintenance1)
 	{
 		LOGI("Disabling usage of VK_EXT_surface_maintenance1 due to USE_MAINTENANCE1=no");
 	}
@@ -973,13 +974,42 @@ SwapchainRecreation::~SwapchainRecreation()
 	}
 }
 
-std::unique_ptr<vkb::Device> SwapchainRecreation::create_device(vkb::PhysicalDevice &gpu)
+void SwapchainRecreation::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
 {
-	std::unique_ptr<vkb::Device> device = vkb::VulkanSample<vkb::BindingType::C>::create_device(gpu);
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
 
-	has_maintenance1 = get_instance().is_enabled(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) &&
-	                   get_instance().is_enabled(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME) &&
-	                   device->is_enabled(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
+	// Request sample-specific extensions as optional
+	if (allow_maintenance1)
+	{
+		requested_extensions[VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME] = vkb::RequestMode::Optional;
+	}
+}
+
+void SwapchainRecreation::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
+{
+	if (allow_maintenance1)
+	{
+		REQUEST_OPTIONAL_FEATURE(gpu, VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT, swapchainMaintenance1);
+	}
+}
+
+void SwapchainRecreation::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_instance_extensions(requested_extensions);
+	if (allow_maintenance1)
+	{
+		requested_extensions[VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME] = vkb::RequestMode::Optional;
+		requested_extensions[VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME]      = vkb::RequestMode::Optional;
+	}
+}
+
+std::unique_ptr<vkb::core::DeviceC> SwapchainRecreation::create_device(vkb::core::PhysicalDeviceC &gpu)
+{
+	std::unique_ptr<vkb::core::DeviceC> device = vkb::VulkanSampleC::create_device(gpu);
+
+	has_maintenance1 = get_instance().is_extension_enabled(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) &&
+	                   get_instance().is_extension_enabled(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME) &&
+	                   device->is_extension_enabled(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
 
 	LOGI("------------------------------------");
 	LOGI("USAGE:");

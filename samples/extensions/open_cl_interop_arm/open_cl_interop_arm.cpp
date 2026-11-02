@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Arm Limited and Contributors
+/* Copyright (c) 2021-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -44,18 +44,6 @@ OpenCLInteropArm::OpenCLInteropArm()
 {
 	zoom  = -3.5f;
 	title = "Interoperability with OpenCL";
-
-	add_device_extension(VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME);
-
-	add_device_extension(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME);
-	add_device_extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
-	add_device_extension(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
-	add_device_extension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_instance_extension(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
-	add_device_extension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
-	add_device_extension(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
-	add_device_extension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
 }
 
 OpenCLInteropArm::~OpenCLInteropArm()
@@ -139,6 +127,27 @@ void OpenCLInteropArm::render(float delta_time)
 	ApiVulkanSample::submit_frame();
 }
 
+void OpenCLInteropArm::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME] = vkb::RequestMode::Required;
+
+	requested_extensions[VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME]  = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_MAINTENANCE1_EXTENSION_NAME]              = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_BIND_MEMORY_2_EXTENSION_NAME]             = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME]           = vkb::RequestMode::Required;
+	requested_extensions[VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME]      = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME]      = vkb::RequestMode::Required;
+}
+
+void OpenCLInteropArm::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	ApiVulkanSample::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
 void OpenCLInteropArm::view_changed()
 {
 	update_uniform_buffers();
@@ -210,18 +219,18 @@ void OpenCLInteropArm::generate_quad()
 	// Create buffers
 	// For the sake of simplicity we won't stage the vertex data to the gpu memory
 	// Vertex buffer
-	vertex_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                    vertex_buffer_size,
-	                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-	                                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-	                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+	vertex_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                     vertex_buffer_size,
+	                                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+	                                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+	                                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
 	vertex_buffer->update(vertices.data(), vertex_buffer_size);
 
-	index_buffer = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                   index_buffer_size,
-	                                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-	                                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-	                                                   VMA_MEMORY_USAGE_CPU_TO_GPU);
+	index_buffer = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                    index_buffer_size,
+	                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+	                                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+	                                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	index_buffer->update(indices.data(), index_buffer_size);
 }
@@ -411,10 +420,10 @@ void OpenCLInteropArm::prepare_pipelines()
 void OpenCLInteropArm::prepare_uniform_buffers()
 {
 	// Vertex shader uniform buffer block
-	uniform_buffer_vs = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                        sizeof(ubo_vs),
-	                                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffer_vs = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                         sizeof(ubo_vs),
+	                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -487,7 +496,7 @@ void OpenCLInteropArm::prepare_shared_resources()
 	VkMemoryAllocateInfo memory_allocate_info = vkb::initializers::memory_allocate_info();
 	memory_allocate_info.pNext                = &export_memory_allocate_Info;
 	memory_allocate_info.allocationSize       = 0;
-	memory_allocate_info.memoryTypeIndex      = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex      = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	VK_CHECK(vkAllocateMemory(device_handle, &memory_allocate_info, nullptr, &shared_texture.memory));
 	VK_CHECK(vkBindImageMemory(device_handle, shared_texture.image, shared_texture.memory, 0));
@@ -617,7 +626,7 @@ void OpenCLInteropArm::prepare_open_cl_resources()
 
 	cl_data->command_queue = clCreateCommandQueue(cl_data->context, cl_data->device_id, 0, &result);
 
-	std::string kernel_source      = vkb::fs::read_shader("open_cl_interop_arm/procedural_texture.cl");
+	std::string kernel_source      = vkb::fs::read_text_file("open_cl_interop_arm/procedural_texture.cl");
 	auto        kernel_source_data = kernel_source.c_str();
 	size_t      kernel_source_size = kernel_source.size();
 

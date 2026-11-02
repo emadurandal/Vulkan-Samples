@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Arm Limited and Contributors
+/* Copyright (c) 2021-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -23,14 +23,6 @@ static constexpr uint32_t NumDescriptorsNonUniform = 64;
 DescriptorIndexing::DescriptorIndexing()
 {
 	title = "Descriptor indexing";
-
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_device_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-	add_device_extension(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
-
-	// Works around a validation layer bug with descriptor pool allocation with VARIABLE_COUNT.
-	// See: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2350.
-	add_device_extension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
 }
 
 DescriptorIndexing::~DescriptorIndexing()
@@ -193,9 +185,9 @@ void DescriptorIndexing::create_immutable_sampler_descriptor_set()
 
 void DescriptorIndexing::create_bindless_descriptors()
 {
-	VkDescriptorSetLayoutBinding binding = vkb::initializers::descriptor_set_layout_binding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-	                                                                                        descriptor_indexing_properties.maxDescriptorSetUpdateAfterBindSampledImages);
+	uint32_t descriptorCount = descriptor_indexing_properties.maxDescriptorSetUpdateAfterBindSampledImages;
 
+	VkDescriptorSetLayoutBinding    binding                = vkb::initializers::descriptor_set_layout_binding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 0, descriptorCount);
 	VkDescriptorSetLayoutCreateInfo set_layout_create_info = vkb::initializers::descriptor_set_layout_create_info(&binding, 1);
 
 	// We're going to use update-after-bind, so we need to make sure the flag is set correctly in the set layout.
@@ -235,7 +227,9 @@ void DescriptorIndexing::create_bindless_descriptors()
 
 	// We're going to allocate two separate descriptor sets from the same pool, and here VARIABLE_DESCRIPTOR_COUNT comes in handy!
 	// For the non-uniform indexing part, we allocate few descriptors, and for the streaming case, we allocate a fairly large ring buffer of descriptors we can play around with.
-	VkDescriptorPoolSize       pool_size = vkb::initializers::descriptor_pool_size(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, NumDescriptorsStreaming + NumDescriptorsNonUniform);
+	uint32_t poolCount = NumDescriptorsStreaming + NumDescriptorsNonUniform;
+
+	VkDescriptorPoolSize       pool_size = vkb::initializers::descriptor_pool_size(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, poolCount);
 	VkDescriptorPoolCreateInfo pool      = vkb::initializers::descriptor_pool_create_info(1, &pool_size, 2);
 
 	// The pool is marked update-after-bind. Be aware that there is a global limit to the number of descriptors can be allocated at any one time.
@@ -309,12 +303,12 @@ void DescriptorIndexing::create_pipelines()
 	info.pStages    = stages;
 	info.stageCount = 2;
 
-	stages[0] = load_shader("descriptor_indexing", "nonuniform-quads.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	stages[1] = load_shader("descriptor_indexing", "nonuniform-quads.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	stages[0] = load_shader("descriptor_indexing", "nonuniform-quads.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	stages[1] = load_shader("descriptor_indexing", "nonuniform-quads.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), VK_NULL_HANDLE, 1, &info, nullptr, &pipelines.non_uniform_indexing));
 
-	stages[0] = load_shader("descriptor_indexing", "update-after-bind-quads.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	stages[1] = load_shader("descriptor_indexing", "update-after-bind-quads.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	stages[0] = load_shader("descriptor_indexing", "update-after-bind-quads.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	stages[1] = load_shader("descriptor_indexing", "update-after-bind-quads.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), VK_NULL_HANDLE, 1, &info, nullptr, &pipelines.update_after_bind));
 }
 
@@ -344,7 +338,7 @@ DescriptorIndexing::TestImage DescriptorIndexing::create_image(const float rgb[3
 
 	vkGetImageMemoryRequirements(get_device().get_handle(), test_image.image, &memory_requirements);
 	memory_allocation_info.allocationSize  = memory_requirements.size;
-	memory_allocation_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocation_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocation_info, nullptr, &test_image.memory));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), test_image.image, test_image.memory, 0));
 
@@ -359,7 +353,7 @@ DescriptorIndexing::TestImage DescriptorIndexing::create_image(const float rgb[3
 	image_view.image                           = test_image.image;
 	VK_CHECK(vkCreateImageView(get_device().get_handle(), &image_view, nullptr, &test_image.image_view));
 
-	auto staging_buffer = vkb::core::Buffer::create_staging_buffer(get_device(), image_info.extent.width * image_info.extent.height * sizeof(uint32_t), nullptr);
+	auto staging_buffer = vkb::core::BufferC::create_staging_buffer(get_device(), image_info.extent.width * image_info.extent.height * sizeof(uint32_t), nullptr);
 
 	// Generate a random texture.
 	// Fairly simple, create different colors and some different patterns.
@@ -432,23 +426,24 @@ DescriptorIndexing::TestImage DescriptorIndexing::create_image(const float rgb[3
 	staging_buffer.flush();
 	staging_buffer.unmap();
 
-	auto &cmd = get_device().request_command_buffer();
-	cmd.begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+	auto cmd = get_device().get_command_pool().request_command_buffer();
+	cmd->begin(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
-	vkb::image_layout_transition(cmd.get_handle(), test_image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	vkb::image_layout_transition(cmd->get_handle(), test_image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	VkBufferImageCopy copy_info{};
 	copy_info.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
 	copy_info.imageExtent      = image_info.extent;
-	vkCmdCopyBufferToImage(cmd.get_handle(), staging_buffer.get_handle(), test_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_info);
+	vkCmdCopyBufferToImage(cmd->get_handle(), staging_buffer.get_handle(), test_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_info);
 
-	vkb::image_layout_transition(cmd.get_handle(), test_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vkb::image_layout_transition(cmd->get_handle(), test_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	VK_CHECK(cmd.end());
+	cmd->end();
 
 	// Not very optimal, but it's the simplest solution.
-	get_device().get_suitable_graphics_queue().submit(cmd, VK_NULL_HANDLE);
-	get_device().get_suitable_graphics_queue().wait_idle();
+	auto const &graphicsQueue = get_device().get_queue_by_flags(VK_QUEUE_GRAPHICS_BIT, 0);
+	graphicsQueue.submit(*cmd, VK_NULL_HANDLE);
+	graphicsQueue.wait_idle();
 
 	return test_image;
 }
@@ -499,37 +494,58 @@ bool DescriptorIndexing::prepare(const vkb::ApplicationOptions &options)
 	return true;
 }
 
-void DescriptorIndexing::request_gpu_features(vkb::PhysicalDevice &gpu)
+void DescriptorIndexing::request_device_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	vkb::VulkanSampleC::request_device_extensions(requested_extensions);
+
+	requested_extensions[VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME] = vkb::RequestMode::Required;
+	requested_extensions[VK_KHR_MAINTENANCE3_EXTENSION_NAME]        = vkb::RequestMode::Required;
+
+	// Works around a validation layer bug with descriptor pool allocation with VARIABLE_COUNT.
+	// See: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2350.
+	requested_extensions[VK_KHR_MAINTENANCE1_EXTENSION_NAME] = vkb::RequestMode::Required;
+}
+
+void DescriptorIndexing::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	gpu.get_mutable_requested_features().shaderSampledImageArrayDynamicIndexing = VK_TRUE;
 
-	auto &features = gpu.request_extension_features<VkPhysicalDeviceDescriptorIndexingFeaturesEXT>(
-	    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT);
-
-	features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, shaderSampledImageArrayNonUniformIndexing);
 
 	// These are required to support the 4 descriptor binding flags we use in this sample.
-	features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-	features.descriptorBindingPartiallyBound              = VK_TRUE;
-	features.descriptorBindingUpdateUnusedWhilePending    = VK_TRUE;
-	features.descriptorBindingVariableDescriptorCount     = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, descriptorBindingSampledImageUpdateAfterBind);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, descriptorBindingPartiallyBound);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, descriptorBindingUpdateUnusedWhilePending);
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, descriptorBindingVariableDescriptorCount);
 
 	// Enables use of runtimeDescriptorArrays in SPIR-V shaders.
-	features.runtimeDescriptorArray = VK_TRUE;
+	REQUEST_REQUIRED_FEATURE(gpu, VkPhysicalDeviceDescriptorIndexingFeaturesEXT, runtimeDescriptorArray);
 
 	// There are lot of properties associated with descriptor_indexing, grab them here.
-	auto vkGetPhysicalDeviceProperties2KHR =
-	    reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2KHR>(vkGetInstanceProcAddr(get_instance().get_handle(), "vkGetPhysicalDeviceProperties2KHR"));
-	assert(vkGetPhysicalDeviceProperties2KHR);
-	VkPhysicalDeviceProperties2KHR device_properties{};
-
 	descriptor_indexing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES_EXT;
-	device_properties.sType              = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
-	device_properties.pNext              = &descriptor_indexing_properties;
+
+	VkPhysicalDeviceProperties2KHR device_properties{};
+	device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+	device_properties.pNext = &descriptor_indexing_properties;
 	vkGetPhysicalDeviceProperties2KHR(gpu.get_handle(), &device_properties);
 }
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_descriptor_indexing()
+#if defined(PLATFORM__MACOS)
+void DescriptorIndexing::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	ApiVulkanSample::request_instance_extensions(requested_extensions);
+	// On Apple use layer setting to enable MoltenVK's Metal argument buffers - needed for descriptor indexing/scaling
+	requested_extensions[VK_EXT_LAYER_SETTINGS_EXTENSION_NAME] = vkb::RequestMode::Optional;
+}
+
+void DescriptorIndexing::request_layer_settings(std::vector<VkLayerSettingEXT> &requested_layer_settings, vkb::StructureChainBuilderC<VkInstanceCreateInfo> &scb) const
+{
+	ApiVulkanSample::request_layer_settings(requested_layer_settings, scb);
+	requested_layer_settings.push_back({"MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", VK_LAYER_SETTING_TYPE_INT32_EXT, 1, &scb.add_chain_data<int32_t>(1)});
+}
+#endif
+
+std::unique_ptr<vkb::VulkanSampleC> create_descriptor_indexing()
 {
 	return std::make_unique<DescriptorIndexing>();
 }

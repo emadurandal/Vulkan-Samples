@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -17,14 +17,18 @@
 
 #pragma once
 
-#include <common/glm_common.h>
+#include "common/vk_common.h"
+#include "core/util/logging.hpp"
+#include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
 
 namespace vkb
 {
 namespace core
 {
-class HPPCommandBuffer;
+template <vkb::BindingType bindingType>
+class CommandBuffer;
+using CommandBufferCpp = CommandBuffer<vkb::BindingType::Cpp>;
 
 /**
  * @brief An interface over platform-specific debug extensions.
@@ -136,7 +140,7 @@ class HPPScopedDebugLabel final
   public:
 	HPPScopedDebugLabel(const vkb::core::HPPDebugUtils &debug_utils, vk::CommandBuffer command_buffer, std::string const &name, glm::vec4 const color = {});
 
-	HPPScopedDebugLabel(const vkb::core::HPPCommandBuffer &command_buffer, std::string const &name, glm::vec4 const color = {});
+	HPPScopedDebugLabel(const vkb::core::CommandBufferCpp &command_buffer, std::string const &name, glm::vec4 const color = {});
 
 	~HPPScopedDebugLabel();
 
@@ -145,5 +149,62 @@ class HPPScopedDebugLabel final
 	vk::CommandBuffer               command_buffer;
 };
 
+#if defined(VKB_DEBUG) || defined(VKB_VALIDATION_LAYERS)
+inline VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_utils_messenger_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+                                                                       vk::DebugUtilsMessageTypeFlagsEXT             message_type,
+                                                                       vk::DebugUtilsMessengerCallbackDataEXT const *callback_data,
+                                                                       void                                         *user_data)
+{
+	// Log debug message
+	std::string message = fmt::format("Debug callback {}\n{}: {}", vk::to_string(message_type), callback_data->pMessageIdName, callback_data->pMessage);
+	switch (message_severity)
+	{
+		case vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose:
+			LOGD("{}", message);
+			break;
+		case vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo:
+			LOGI("{}", message);
+			break;
+		case vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning:
+			LOGW("{}", message);
+			break;
+		case vk::DebugUtilsMessageSeverityFlagBitsEXT::eError:
+			LOGE("{}", message);
+			break;
+		default:
+			LOGE("Unknown message severity {}!\n{}", vk::to_string(message_severity), message);
+			break;
+	}
+	return vk::False;
+}
+
+inline VKAPI_ATTR vk::Bool32 VKAPI_CALL debug_callback(vk::DebugReportFlagsEXT flags,
+                                                       vk::DebugReportObjectTypeEXT /*type*/,
+                                                       uint64_t /*object*/,
+                                                       size_t /*location*/,
+                                                       int32_t /*message_code*/,
+                                                       char const *layer_prefix,
+                                                       char const *message,
+                                                       void * /*user_data*/)
+{
+	if (flags & vk::DebugReportFlagBitsEXT::eError)
+	{
+		LOGE("{}: {}", layer_prefix, message);
+	}
+	else if (flags & vk::DebugReportFlagBitsEXT::eWarning)
+	{
+		LOGW("{}: {}", layer_prefix, message);
+	}
+	else if (flags & vk::DebugReportFlagBitsEXT::ePerformanceWarning)
+	{
+		LOGW("{}: {}", layer_prefix, message);
+	}
+	else
+	{
+		LOGI("{}: {}", layer_prefix, message);
+	}
+	return false;
+}
+#endif
 }        // namespace core
 }        // namespace vkb

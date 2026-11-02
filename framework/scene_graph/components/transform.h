@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2024, Arm Limited and Contributors
+/* Copyright (c) 2018-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,27 +22,31 @@
 #include <typeinfo>
 #include <vector>
 
-#include "common/error.h"
-
 #include "common/glm_common.h"
+#include "common/vk_common.h"
 #include <glm/gtx/quaternion.hpp>
 
 #include "scene_graph/component.h"
 
 namespace vkb
 {
+namespace scene_graph
+{
+template <vkb::BindingType bindingType>
+class Node;
+using NodeC = Node<vkb::BindingType::C>;
+}        // namespace scene_graph
+
 namespace sg
 {
-class Node;
-
 class Transform : public Component
 {
   public:
-	Transform(Node &node);
+	Transform(vkb::scene_graph::NodeC &node);
 
 	virtual ~Transform() = default;
 
-	Node &get_node();
+	vkb::scene_graph::NodeC &get_node();
 
 	virtual std::type_index get_type() override;
 
@@ -72,7 +76,7 @@ class Transform : public Component
 	void invalidate_world_matrix();
 
   private:
-	Node &node;
+	vkb::scene_graph::NodeC &node;
 
 	glm::vec3 translation = glm::vec3(0.0, 0.0, 0.0);
 

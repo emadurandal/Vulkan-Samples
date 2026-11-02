@@ -1,4 +1,4 @@
-/* Copyright (c) 2022-2024, Holochip
+/* Copyright (c) 2022-2026, Holochip
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -33,10 +33,6 @@ Portability::Portability() :
     filter_pass()
 {
 	title = "Portability";
-	// Portability is a Vulkan 1.3 extension
-	set_api_version(VK_API_VERSION_1_3);
-	add_instance_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	add_instance_extension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 }
 
 Portability::~Portability()
@@ -76,13 +72,25 @@ Portability::~Portability()
 	}
 }
 
-void Portability::request_gpu_features(vkb::PhysicalDevice &gpu)
+uint32_t Portability::get_api_version() const
+{
+	// Portability is a Vulkan 1.3 extension
+	return VK_API_VERSION_1_3;
+}
+
+void Portability::request_gpu_features(vkb::core::PhysicalDeviceC &gpu)
 {
 	// Enable anisotropic filtering if supported
 	if (gpu.get_features().samplerAnisotropy)
 	{
 		gpu.get_mutable_requested_features().samplerAnisotropy = VK_TRUE;
 	}
+}
+
+void Portability::request_instance_extensions(std::unordered_map<std::string, vkb::RequestMode> &requested_extensions) const
+{
+	ApiVulkanSample::request_instance_extensions(requested_extensions);
+	requested_extensions[VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME] = vkb::RequestMode::Optional;
 }
 
 void Portability::build_command_buffers()
@@ -277,7 +285,7 @@ void Portability::create_attachment(VkFormat format, VkImageUsageFlagBits usage,
 	VK_CHECK(vkCreateImage(get_device().get_handle(), &image, nullptr, &attachment->image));
 	vkGetImageMemoryRequirements(get_device().get_handle(), attachment->image, &memory_requirements);
 	memory_allocate_info.allocationSize  = memory_requirements.size;
-	memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memory_allocate_info.memoryTypeIndex = get_device().get_gpu().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(get_device().get_handle(), &memory_allocate_info, nullptr, &attachment->mem));
 	VK_CHECK(vkBindImageMemory(get_device().get_handle(), attachment->image, attachment->mem, 0));
 
@@ -352,19 +360,27 @@ void Portability::prepare_offscreen_buffer()
 		// Use subpass dependencies for attachment layout transitions
 		std::array<VkSubpassDependency, 2> dependencies{};
 
+		// vkCmdBeginRenderPass clears the color aspect of attachment 0 (offscreen.color[0]) and 1 (offscreen.color[1]) in subpass 0 of VkRenderPass offscreen.render_pass
+		// (loadOp VK_ATTACHMENT_LOAD_OP_CLEAR), which was previously written during an image layout transition initiated by the same command.
+		// For correct synchronization, the dependency from external to subpass 0 must allow VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT access at VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT.
 		dependencies[0].srcSubpass    = VK_SUBPASS_EXTERNAL;
 		dependencies[0].dstSubpass    = 0;
 		dependencies[0].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[0].dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-		dependencies[1].srcSubpass    = 0;
-		dependencies[1].dstSubpass    = VK_SUBPASS_EXTERNAL;
+		// vkCmdBeginRenderPass clears the depth aspect of attachment 2 (offscreen.depth.view) in subpass 0 of VkRenderPass offscreen.render_pass (loadOp VK_ATTACHMENT_LOAD_OP_CLEAR),
+		// which was previously written during an image layout transition initiated by the same command.
+		// For correct synchronization, the dependency from external to subpass 0 must allow VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT access at VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT.
+		dependencies[1].srcSubpass    = VK_SUBPASS_EXTERNAL;
+		dependencies[1].dstSubpass    = 0;
 		dependencies[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].dstStageMask  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dependencies[1].dstStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		// No need for a dependency from subpass 0 to external
 
 		VkRenderPassCreateInfo render_pass_create_info = {};
 		render_pass_create_info.sType                  = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -372,7 +388,7 @@ void Portability::prepare_offscreen_buffer()
 		render_pass_create_info.attachmentCount        = static_cast<uint32_t>(attachment_descriptions.size());
 		render_pass_create_info.subpassCount           = 1;
 		render_pass_create_info.pSubpasses             = &subpass;
-		render_pass_create_info.dependencyCount        = 2;
+		render_pass_create_info.dependencyCount        = static_cast<uint32_t>(dependencies.size());
 		render_pass_create_info.pDependencies          = dependencies.data();
 
 		VK_CHECK(vkCreateRenderPass(get_device().get_handle(), &render_pass_create_info, nullptr, &offscreen.render_pass));
@@ -708,8 +724,8 @@ void Portability::prepare_pipelines()
 	pipeline_create_info.pVertexInputState                 = &empty_input_state;
 
 	// Final fullscreen composition pass pipeline
-	shader_stages[0]                  = load_shader("debug_utils", "composition.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                  = load_shader("debug_utils", "composition.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                  = load_shader("debug_utils", "composition.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                  = load_shader("debug_utils", "composition.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	pipeline_create_info.layout       = pipeline_layouts.composition;
 	pipeline_create_info.renderPass   = render_pass;
 	rasterization_state.cullMode      = VK_CULL_MODE_FRONT_BIT;
@@ -718,8 +734,8 @@ void Portability::prepare_pipelines()
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.composition));
 
 	// Bloom pass
-	shader_stages[0]                           = load_shader("debug_utils", "bloom.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1]                           = load_shader("debug_utils", "bloom.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0]                           = load_shader("debug_utils", "bloom.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1]                           = load_shader("debug_utils", "bloom.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	color_blend_state.pAttachments             = &blend_attachment_state;
 	blend_attachment_state.colorWriteMask      = 0xF;
 	blend_attachment_state.blendEnable         = VK_TRUE;
@@ -777,8 +793,8 @@ void Portability::prepare_pipelines()
 	color_blend_state.attachmentCount  = 2;
 	color_blend_state.pAttachments     = blend_attachment_states.data();
 
-	shader_stages[0] = load_shader("debug_utils", "gbuffer.vert", VK_SHADER_STAGE_VERTEX_BIT);
-	shader_stages[1] = load_shader("debug_utils", "gbuffer.frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shader_stages[0] = load_shader("debug_utils", "gbuffer.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shader_stages[1] = load_shader("debug_utils", "gbuffer.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK(vkCreateGraphicsPipelines(get_device().get_handle(), pipeline_cache, 1, &pipeline_create_info, nullptr, &pipelines.skysphere));
 
 	// Enable depth test and write
@@ -793,10 +809,10 @@ void Portability::prepare_pipelines()
 void Portability::prepare_uniform_buffers()
 {
 	// Matrices vertex shader uniform buffer
-	uniform_buffers.matrices = std::make_unique<vkb::core::Buffer>(get_device(),
-	                                                               sizeof(ubo_vs),
-	                                                               VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-	                                                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+	uniform_buffers.matrices = std::make_unique<vkb::core::BufferC>(get_device(),
+	                                                                sizeof(ubo_vs),
+	                                                                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	                                                                VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
 }
@@ -832,7 +848,7 @@ bool Portability::prepare(const vkb::ApplicationOptions &options)
 	// Note: Using reversed depth-buffer for increased precision, so Znear and Zfar are flipped
 	camera.set_perspective(60.0f, static_cast<float>(width) / static_cast<float>(height), 256.0f, 0.1f);
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
+#ifdef VKB_ENABLE_PORTABILITY
 	portability_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR;
 	VkPhysicalDeviceFeatures2 device_features{};
 	device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -867,42 +883,49 @@ void Portability::render(float delta_time)
 
 void Portability::on_update_ui_overlay(vkb::Drawer &drawer)
 {
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-	std::string portability_support_list;
-	if (portability_features.constantAlphaColorBlendFactors)
-		portability_support_list += "constantAlphaColorBlendFactors\n";
-	if (portability_features.events)
-		portability_support_list += "events\n";
-	if (portability_features.imageView2DOn3DImage)
-		portability_support_list += "imageView2DOn3dImage\n";
-	if (portability_features.imageViewFormatReinterpretation)
-		portability_support_list += "imageViewFormatReinterpretation\n";
-	if (portability_features.imageViewFormatSwizzle)
-		portability_support_list += "imageViewFormatSwizzle\n";
-	if (portability_features.multisampleArrayImage)
-		portability_support_list += "multisampleArrayImage\n";
-	if (portability_features.mutableComparisonSamplers)
-		portability_support_list += "mutableComparisonSamplers\n";
-	if (portability_features.pointPolygons)
-		portability_support_list += "pointPolygons\n";
-	if (portability_features.samplerMipLodBias)
-		portability_support_list += "samplerMipLodBias\n";
-	if (portability_features.separateStencilMaskRef)
-		portability_support_list += "separateStencilMaskRef\n";
-	if (portability_features.shaderSampleRateInterpolationFunctions)
-		portability_support_list += "shaderSampleRateInterpolationFunctions\n";
-	if (portability_features.tessellationIsolines)
-		portability_support_list += "tessellationIsolines\n";
-	if (portability_features.tessellationPointMode)
-		portability_support_list += "tessellationPointMode\n";
-	if (portability_features.triangleFans)
-		portability_support_list += "triangleFans\n";
-	if (portability_features.vertexAttributeAccessBeyondStride)
-		portability_support_list += "vertexAttributeAccessBeyondStride\n";
-	drawer.text("Device Portability feature support list:\n%s", portability_support_list.c_str());
-#else
-	drawer.text("VK_ENABLE_BETA_EXTENSIONS not enabled can't list portability feature set");
+#ifdef VKB_ENABLE_PORTABILITY
+	// VK_KHR_portability_subset extension must be available in the implementation to list device portability feature set
+	if (get_device().get_gpu().is_extension_supported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
+	{
+		std::string portability_support_list;
+		if (portability_features.constantAlphaColorBlendFactors)
+			portability_support_list += "constantAlphaColorBlendFactors\n";
+		if (portability_features.events)
+			portability_support_list += "events\n";
+		if (portability_features.imageView2DOn3DImage)
+			portability_support_list += "imageView2DOn3dImage\n";
+		if (portability_features.imageViewFormatReinterpretation)
+			portability_support_list += "imageViewFormatReinterpretation\n";
+		if (portability_features.imageViewFormatSwizzle)
+			portability_support_list += "imageViewFormatSwizzle\n";
+		if (portability_features.multisampleArrayImage)
+			portability_support_list += "multisampleArrayImage\n";
+		if (portability_features.mutableComparisonSamplers)
+			portability_support_list += "mutableComparisonSamplers\n";
+		if (portability_features.pointPolygons)
+			portability_support_list += "pointPolygons\n";
+		if (portability_features.samplerMipLodBias)
+			portability_support_list += "samplerMipLodBias\n";
+		if (portability_features.separateStencilMaskRef)
+			portability_support_list += "separateStencilMaskRef\n";
+		if (portability_features.shaderSampleRateInterpolationFunctions)
+			portability_support_list += "shaderSampleRateInterpolationFunctions\n";
+		if (portability_features.tessellationIsolines)
+			portability_support_list += "tessellationIsolines\n";
+		if (portability_features.tessellationPointMode)
+			portability_support_list += "tessellationPointMode\n";
+		if (portability_features.triangleFans)
+			portability_support_list += "triangleFans\n";
+		if (portability_features.vertexAttributeAccessBeyondStride)
+			portability_support_list += "vertexAttributeAccessBeyondStride\n";
+		drawer.text("Device Portability feature support list:\n%s", portability_support_list.c_str());
+	}
+	else
 #endif
+	{
+		drawer.text("VK_KHR_portability_subset not available can't list portability feature set");
+	}
+
 	if (drawer.header("Settings"))
 	{
 		if (drawer.checkbox("Bloom", &bloom))

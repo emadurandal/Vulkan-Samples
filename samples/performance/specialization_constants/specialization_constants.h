@@ -1,4 +1,4 @@
-/* Copyright (c) 2019-2024, Arm Limited and Contributors
+/* Copyright (c) 2019-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -29,14 +29,14 @@
 
 struct alignas(16) CustomForwardLights
 {
-	uint32_t   count;
-	vkb::Light lights[LIGHT_COUNT];
+	uint32_t              count;
+	vkb::rendering::Light lights[LIGHT_COUNT];
 };
 
 /**
  * @brief Using specialization constants
  */
-class SpecializationConstants : public vkb::VulkanSample<vkb::BindingType::C>
+class SpecializationConstants : public vkb::VulkanSampleC
 {
   public:
 	SpecializationConstants();
@@ -49,16 +49,18 @@ class SpecializationConstants : public vkb::VulkanSample<vkb::BindingType::C>
 	 * @brief This subpass is responsible for rendering a Scene
 	 *		  It implements a custom draw function which passes a custom light count
 	 */
-	class ForwardSubpassCustomLights : public vkb::ForwardSubpass
+	class ForwardSubpassCustomLights : public vkb::rendering::subpasses::ForwardSubpassC
 	{
 	  public:
-		ForwardSubpassCustomLights(vkb::RenderContext &render_context,
-		                           vkb::ShaderSource &&vertex_source, vkb::ShaderSource &&fragment_source,
-		                           vkb::sg::Scene &scene, vkb::sg::Camera &camera);
+		ForwardSubpassCustomLights(vkb::rendering::RenderContextC &render_context,
+		                           vkb::core::ShaderSource       &&vertex_source,
+		                           vkb::core::ShaderSource       &&fragment_source,
+		                           vkb::scene_graph::SceneC       &scene,
+		                           vkb::sg::Camera                &camera);
 
 		virtual void prepare() override;
 
-		virtual void draw(vkb::CommandBuffer &command_buffer) override;
+		virtual void draw(vkb::core::CommandBufferC &command_buffer) override;
 
 		/**
 		 * @brief Create a buffer allocation from scene graph lights for the specialization constants sample
@@ -71,12 +73,12 @@ class SpecializationConstants : public vkb::VulkanSample<vkb::BindingType::C>
 		 * @return BufferAllocation A buffer allocation created for use in shaders
 		 */
 		template <typename T>
-		vkb::BufferAllocation allocate_custom_lights(vkb::CommandBuffer &command_buffer, const std::vector<vkb::sg::Light *> &scene_lights, size_t light_count)
+		vkb::BufferAllocationC allocate_custom_lights(vkb::core::CommandBufferC &command_buffer, const std::vector<vkb::sg::Light *> &scene_lights, size_t light_count)
 		{
 			T light_info;
 			light_info.count = vkb::to_u32(light_count);
 
-			std::vector<vkb::Light> lights;
+			std::vector<vkb::rendering::Light> lights;
 			for (auto &scene_light : scene_lights)
 			{
 				if (lights.size() < light_count)
@@ -84,19 +86,19 @@ class SpecializationConstants : public vkb::VulkanSample<vkb::BindingType::C>
 					const auto &properties = scene_light->get_properties();
 					auto       &transform  = scene_light->get_node()->get_transform();
 
-					vkb::Light light{{transform.get_translation(), static_cast<float>(scene_light->get_light_type())},
-					                 {properties.color, properties.intensity},
-					                 {transform.get_rotation() * properties.direction, properties.range},
-					                 {properties.inner_cone_angle, properties.outer_cone_angle}};
+					vkb::rendering::Light light{{transform.get_translation(), static_cast<float>(scene_light->get_light_type())},
+					                            {properties.color, properties.intensity},
+					                            {transform.get_rotation() * properties.direction, properties.range},
+					                            {properties.inner_cone_angle, properties.outer_cone_angle}};
 
 					lights.push_back(light);
 				}
 			}
 
-			std::copy(lights.begin(), lights.end(), light_info.lights);
+			std::copy_n(lights.begin(), light_count, light_info.lights);
 
-			auto                 &render_frame = get_render_context().get_active_frame();
-			vkb::BufferAllocation light_buffer = render_frame.allocate_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(T));
+			auto                  &render_frame = get_render_context().get_active_frame();
+			vkb::BufferAllocationC light_buffer = render_frame.allocate_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(T));
 			light_buffer.update(light_info);
 
 			return light_buffer;
@@ -108,17 +110,17 @@ class SpecializationConstants : public vkb::VulkanSample<vkb::BindingType::C>
 
 	virtual void draw_gui() override;
 
-	virtual void render(vkb::CommandBuffer &command_buffer) override;
+	virtual void render(vkb::core::CommandBufferC &command_buffer) override;
 
-	std::unique_ptr<vkb::RenderPipeline> create_specialization_renderpass();
+	std::unique_ptr<vkb::rendering::RenderPipelineC> create_specialization_renderpass();
 
-	std::unique_ptr<vkb::RenderPipeline> create_standard_renderpass();
+	std::unique_ptr<vkb::rendering::RenderPipelineC> create_standard_renderpass();
 
-	std::unique_ptr<vkb::RenderPipeline> specialization_constants_pipeline{};
+	std::unique_ptr<vkb::rendering::RenderPipelineC> specialization_constants_pipeline{};
 
-	std::unique_ptr<vkb::RenderPipeline> standard_pipeline{};
+	std::unique_ptr<vkb::rendering::RenderPipelineC> standard_pipeline{};
 
 	int specialization_constants_enabled{0};
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_specialization_constants();
+std::unique_ptr<vkb::VulkanSampleC> create_specialization_constants();

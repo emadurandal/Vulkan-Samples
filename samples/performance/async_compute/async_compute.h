@@ -1,4 +1,4 @@
-/* Copyright (c) 2021-2024, Arm Limited and Contributors
+/* Copyright (c) 2021-2026, Arm Limited and Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -26,12 +26,14 @@
 /**
  * @brief Using multiple queues to achieve more parallelism on the GPU
  */
-class AsyncComputeSample : public vkb::VulkanSample<vkb::BindingType::C>
+class AsyncComputeSample : public vkb::VulkanSampleC
 {
   public:
 	AsyncComputeSample();
 
 	virtual ~AsyncComputeSample() = default;
+
+	virtual void request_gpu_features(vkb::core::PhysicalDeviceC &gpu) override;
 
 	virtual bool prepare(const vkb::ApplicationOptions &options) override;
 
@@ -45,7 +47,7 @@ class AsyncComputeSample : public vkb::VulkanSample<vkb::BindingType::C>
 
 	virtual void draw_gui() override;
 
-	std::chrono::system_clock::time_point start_time;
+	float elapsed_time{0.0f};
 
 	void        render_shadow_pass();
 	VkSemaphore render_forward_offscreen_pass(VkSemaphore hdr_wait_semaphore);
@@ -54,10 +56,10 @@ class AsyncComputeSample : public vkb::VulkanSample<vkb::BindingType::C>
 	void        setup_queues();
 
 	void                                               prepare_render_targets();
-	std::unique_ptr<vkb::RenderTarget>                 forward_render_targets[2];
-	std::unique_ptr<vkb::RenderTarget>                 shadow_render_target;
-	vkb::RenderPipeline                                shadow_render_pipeline;
-	vkb::RenderPipeline                                forward_render_pipeline;
+	std::unique_ptr<vkb::rendering::RenderTargetC>     forward_render_targets[2];
+	std::unique_ptr<vkb::rendering::RenderTargetC>     shadow_render_target;
+	vkb::rendering::RenderPipelineC                    shadow_render_pipeline;
+	vkb::rendering::RenderPipelineC                    forward_render_pipeline;
 	std::unique_ptr<vkb::core::Sampler>                comparison_sampler;
 	std::unique_ptr<vkb::core::Sampler>                linear_sampler;
 	std::vector<std::unique_ptr<vkb::core::Image>>     blur_chain;
@@ -79,34 +81,38 @@ class AsyncComputeSample : public vkb::VulkanSample<vkb::BindingType::C>
 	bool        double_buffer_hdr_frames{false};
 	unsigned    forward_render_target_index{};
 
-	struct DepthMapSubpass : vkb::ForwardSubpass
+	struct DepthMapSubpass : vkb::rendering::subpasses::ForwardSubpassC
 	{
-		DepthMapSubpass(vkb::RenderContext &render_context,
-		                vkb::ShaderSource &&vertex_shader, vkb::ShaderSource &&fragment_shader,
-		                vkb::sg::Scene &scene, vkb::sg::Camera &camera);
-		virtual void draw(vkb::CommandBuffer &command_buffer) override;
+		DepthMapSubpass(vkb::rendering::RenderContextC &render_context,
+		                vkb::core::ShaderSource       &&vertex_shader,
+		                vkb::core::ShaderSource       &&fragment_shader,
+		                vkb::scene_graph::SceneC       &scene,
+		                vkb::sg::Camera                &camera);
+		virtual void draw(vkb::core::CommandBufferC &command_buffer) override;
 	};
 
-	struct ShadowMapForwardSubpass : vkb::ForwardSubpass
+	struct ShadowMapForwardSubpass : vkb::rendering::subpasses::ForwardSubpassC
 	{
-		ShadowMapForwardSubpass(vkb::RenderContext &render_context,
-		                        vkb::ShaderSource &&vertex_shader, vkb::ShaderSource &&fragment_shader,
-		                        vkb::sg::Scene &scene, vkb::sg::Camera &camera, vkb::sg::Camera &shadow_camera);
+		ShadowMapForwardSubpass(vkb::rendering::RenderContextC &render_context,
+		                        vkb::core::ShaderSource       &&vertex_shader,
+		                        vkb::core::ShaderSource       &&fragment_shader,
+		                        vkb::scene_graph::SceneC       &scene,
+		                        vkb::sg::Camera                &camera,
+		                        vkb::sg::Camera                &shadow_camera);
 		void         set_shadow_map(const vkb::core::ImageView *view, const vkb::core::Sampler *sampler);
-		virtual void draw(vkb::CommandBuffer &command_buffer) override;
+		virtual void draw(vkb::core::CommandBufferC &command_buffer) override;
 
 		const vkb::core::ImageView *shadow_view{nullptr};
 		const vkb::core::Sampler   *shadow_sampler{nullptr};
 		vkb::sg::Camera            &shadow_camera;
 	};
 
-	struct CompositeSubpass : vkb::Subpass
+	struct CompositeSubpass : vkb::rendering::SubpassC
 	{
-		CompositeSubpass(vkb::RenderContext &render_context,
-		                 vkb::ShaderSource &&vertex_shader, vkb::ShaderSource &&fragment_shader);
+		CompositeSubpass(vkb::rendering::RenderContextC &render_context, vkb::core::ShaderSource &&vertex_shader, vkb::core::ShaderSource &&fragment_shader);
 		void         set_texture(const vkb::core::ImageView *hdr_view, const vkb::core::ImageView *bloom_view,
 		                         const vkb::core::Sampler *sampler);
-		virtual void draw(vkb::CommandBuffer &command_buffer) override;
+		virtual void draw(vkb::core::CommandBufferC &command_buffer) override;
 		virtual void prepare() override;
 
 		const vkb::core::ImageView *hdr_view{nullptr};
@@ -115,7 +121,7 @@ class AsyncComputeSample : public vkb::VulkanSample<vkb::BindingType::C>
 		vkb::PipelineLayout        *layout{nullptr};
 	};
 
-	vkb::RenderTarget &get_current_forward_render_target();
+	vkb::rendering::RenderTargetC &get_current_forward_render_target();
 };
 
-std::unique_ptr<vkb::VulkanSample<vkb::BindingType::C>> create_async_compute();
+std::unique_ptr<vkb::VulkanSampleC> create_async_compute();
